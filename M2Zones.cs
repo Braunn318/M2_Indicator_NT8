@@ -3,8 +3,12 @@
 // - Žádné Draw.* objekty: vše se kreslí v OnRender přes SharpDX.
 // - Žádný popisek vlevo nahoře (v grafu DisplayName = "", lze zapnout ShowChartLabel) a žádný řádek v Data Boxu.
 // - Netestovaná / testovaná / prolomená M2; prolomená zůstává v grafu šedě.
+// - Vzhled určuje jen stav (netestovaná / testovaná / prolomená), nikdy stáří zóny.
 // - Calculate.OnBarClose, bez repaintu.
 //
+// 1.0.3 (2026-11-01): zrušeno ztlumení starších M2 (Dim kreslil starší netestovanou jako testovanou);
+//                     vlastní barva pro každý stav (long/short × netestovaná/testovaná, prolomená, tečka testu).
+// 1.0.2 (2026-11-01): netestovaná M2 sytější – výchozí OpacityUntested 70 %, hrana vždy 100 % a o 1 px silnější.
 // 1.0.1 (2026-11-01): název je vidět v okně Indicators (dříve prázdný řádek); OnRender drží zámek
 //                     jen na kopii dat, NT API volá až mimo zámek; zmrazené brushe; ShowChartLabel.
 //
@@ -23,7 +27,7 @@ using NinjaTrader.Gui.Chart;
 using NinjaTrader.NinjaScript.Indicators.M2ZonesCore;
 #endregion
 
-// Režim kreslení starších M2 ve stejném směru (§3). Mimo namespace, aby šel použít i ve vygenerovaném kódu.
+// Zrušeno v 1.0.3 – zůstává jen kvůli načtení starších workspace / šablon (vlastnost PreviousM2Mode je skrytá a nic nedělá).
 public enum M2ZonesPreviousMode
 {
 	Keep,
@@ -141,18 +145,6 @@ namespace NinjaTrader.NinjaScript.Indicators.M2ZonesCore
 			}
 		}
 
-		// Aktivní M2 ve směru = nejnovější potvrzená a neprolomená. Volat pod zámkem Sync.
-		public M2Zone GetActive(bool isLong)
-		{
-			for (int i = zones.Count - 1; i >= 0; i--)
-			{
-				M2Zone z = zones[i];
-				if (z.IsLong == isLong && z.State != M2ZoneState.Broken)
-					return z;
-			}
-			return null;
-		}
-
 		private static M2Zone NewZone(bool isLong, Candidate c, int confBar)
 		{
 			return new M2Zone { IsLong = isLong, M2Bar = c.Bar, ConfBar = confBar, High = c.High, Low = c.Low };
@@ -161,7 +153,8 @@ namespace NinjaTrader.NinjaScript.Indicators.M2ZonesCore
 }
 // ==== M2 ENGINE END ====
 
-namespace NinjaTrader.NinjaScript.Indicators
+// Namespace .Braunn = složka „Braunn“ v seznamu indikátorů NT8 (stejně jako TradeSaber). Neměnit.
+namespace NinjaTrader.NinjaScript.Indicators.Braunn
 {
 	public class M2Zones : Indicator
 	{
@@ -172,9 +165,10 @@ namespace NinjaTrader.NinjaScript.Indicators
 
 		private M2Engine engine;
 
-		// [směr 0 = long, 1 = short][styl]; broken je pro oba směry stejná šedá.
+		// [směr 0 = long, 1 = short][styl]; broken je pro oba směry stejná barva.
 		private SharpDX.Direct2D1.Brush[,]		fillDx	= new SharpDX.Direct2D1.Brush[2, 3];
 		private SharpDX.Direct2D1.Brush[,]		edgeDx	= new SharpDX.Direct2D1.Brush[2, 3];
+		private SharpDX.Direct2D1.Brush			markerDx;
 		private SharpDX.Direct2D1.StrokeStyle	dashStyle;
 
 		// Data jedné zóny pro vykreslení – kopie pořízená pod zámkem, kreslí se až mimo něj.
@@ -218,14 +212,17 @@ namespace NinjaTrader.NinjaScript.Indicators
 
 				ShowLong					= true;
 				ShowShort					= true;
-				PreviousM2Mode				= M2ZonesPreviousMode.Dim;
+				PreviousM2Mode				= M2ZonesPreviousMode.Keep;
 				ShowBroken					= true;
 				MaxHistoryBars				= 2000;
 
-				LongColor					= Brushes.LimeGreen;
-				ShortColor					= Brushes.Red;
+				LongUntestedColor			= Brushes.LimeGreen;
+				LongTestedColor				= Brushes.Olive;
+				ShortUntestedColor			= Brushes.Red;
+				ShortTestedColor			= Brushes.DarkOrange;
 				BrokenColor					= Brushes.Gray;
-				OpacityUntested				= 35;
+				TestMarkerColor				= Brushes.Black;
+				OpacityUntested				= 70;
 				OpacityTested				= 12;
 				OpacityBroken				= 8;
 				EdgeWidth					= 1;
@@ -239,9 +236,12 @@ namespace NinjaTrader.NinjaScript.Indicators
 			else if (State == State.Configure)
 			{
 				// Brushe z dialogu / workspace nemusí být zmrazené; BarBrushes se nastavuje z datového vlákna.
-				LongColor		= Frozen(LongColor);
-				ShortColor		= Frozen(ShortColor);
-				BrokenColor		= Frozen(BrokenColor);
+				LongUntestedColor	= Frozen(LongUntestedColor);
+				LongTestedColor		= Frozen(LongTestedColor);
+				ShortUntestedColor	= Frozen(ShortUntestedColor);
+				ShortTestedColor	= Frozen(ShortTestedColor);
+				BrokenColor			= Frozen(BrokenColor);
+				TestMarkerColor		= Frozen(TestMarkerColor);
 				ColorAbove50	= Frozen(ColorAbove50);
 				ColorBelow50	= Frozen(ColorBelow50);
 			}
@@ -287,15 +287,14 @@ namespace NinjaTrader.NinjaScript.Indicators
 			float[] fillOpacity = { Pct(OpacityUntested), Pct(OpacityTested), Pct(OpacityBroken) };
 
 			for (int dir = 0; dir < 2; dir++)
-			{
-				Brush baseBrush = dir == 0 ? LongColor : ShortColor;
 				for (int s = 0; s < 3; s++)
 				{
-					Brush b = s == StyleBroken ? BrokenColor : baseBrush;
+					Brush b = ColorFor(dir == 0, s);
 					fillDx[dir, s] = b.ToDxBrush(RenderTarget, fillOpacity[s]);
-					edgeDx[dir, s] = b.ToDxBrush(RenderTarget, EdgeOpacity(fillOpacity[s]));
+					edgeDx[dir, s] = b.ToDxBrush(RenderTarget, s == StyleUntested ? 1f : EdgeOpacity(fillOpacity[s]));
 				}
-			}
+
+			markerDx = (TestMarkerColor ?? Brushes.Black).ToDxBrush(RenderTarget, 1f);
 
 			dashStyle = new SharpDX.Direct2D1.StrokeStyle(RenderTarget.Factory,
 				new SharpDX.Direct2D1.StrokeStyleProperties { DashStyle = SharpDX.Direct2D1.DashStyle.Dash });
@@ -310,7 +309,21 @@ namespace NinjaTrader.NinjaScript.Indicators
 					if (edgeDx[dir, s] != null) { edgeDx[dir, s].Dispose(); edgeDx[dir, s] = null; }
 				}
 
+			if (markerDx != null) { markerDx.Dispose(); markerDx = null; }
 			if (dashStyle != null) { dashStyle.Dispose(); dashStyle = null; }
+		}
+
+		// Barva podle směru a stavu – každý stav má vlastní barvu z nastavení.
+		private Brush ColorFor(bool isLong, int style)
+		{
+			Brush b;
+			if (style == StyleBroken)
+				b = BrokenColor;
+			else if (style == StyleTested)
+				b = isLong ? LongTestedColor : ShortTestedColor;
+			else
+				b = isLong ? LongUntestedColor : ShortUntestedColor;
+			return b ?? Brushes.Gray;
 		}
 
 		private static Brush Frozen(Brush b)
@@ -352,8 +365,6 @@ namespace NinjaTrader.NinjaScript.Indicators
 			lock (engine.Sync)
 			{
 				int		lastBar		= engine.LastBar;
-				M2Zone	activeLong	= engine.GetActive(true);
-				M2Zone	activeShort	= engine.GetActive(false);
 				List<M2Zone> zones	= engine.Zones;
 
 				for (int i = 0; i < zones.Count; i++)
@@ -367,6 +378,7 @@ namespace NinjaTrader.NinjaScript.Indicators
 					if (endBar < fromIdx || z.M2Bar > toIdx)
 						continue;
 
+					// Vzhled = jen stav zóny. Stáří (novější M2 ve stejném směru) na vzhled nemá vliv.
 					int style;
 					if (z.State == M2ZoneState.Broken)
 					{
@@ -374,18 +386,10 @@ namespace NinjaTrader.NinjaScript.Indicators
 							continue;
 						style = StyleBroken;
 					}
+					else if (z.State == M2ZoneState.Tested)
+						style = StyleTested;
 					else
-					{
-						style = z.State == M2ZoneState.Tested ? StyleTested : StyleUntested;
-						bool isActive = z == (z.IsLong ? activeLong : activeShort);
-						if (!isActive)
-						{
-							if (PreviousM2Mode == M2ZonesPreviousMode.Hide)
-								continue;
-							if (PreviousM2Mode == M2ZonesPreviousMode.Dim)
-								style = StyleTested;
-						}
-					}
+						style = StyleUntested;
 
 					views.Add(new ZoneView
 					{
@@ -433,7 +437,7 @@ namespace NinjaTrader.NinjaScript.Indicators
 					if (stroke != null)
 						RenderTarget.DrawRectangle(rect, edge, 1f, stroke);
 					else
-						RenderTarget.DrawRectangle(rect, edge, 1f);
+						RenderTarget.DrawRectangle(rect, edge, style == StyleUntested ? 2f : 1f);
 
 					// Hrana od potvrzovací svíčky doprava – do prolomení, jinak do aktuální svíčky.
 					if (xEnd > xConf)
@@ -443,7 +447,7 @@ namespace NinjaTrader.NinjaScript.Indicators
 						if (stroke != null)
 							RenderTarget.DrawLine(p1, p2, edge, edgeWidth, stroke);
 						else
-							RenderTarget.DrawLine(p1, p2, edge, edgeWidth);
+							RenderTarget.DrawLine(p1, p2, edge, style == StyleUntested ? edgeWidth + 1 : edgeWidth);
 					}
 
 					// Tečka v místě prvního testu.
@@ -452,7 +456,7 @@ namespace NinjaTrader.NinjaScript.Indicators
 						RenderTarget.AntialiasMode = SharpDX.Direct2D1.AntialiasMode.PerPrimitive;
 						float r = Math.Max(2.5f, edgeWidth + 1.5f);
 						float xTest = chartControl.GetXByBarIndex(ChartBars, z.TestBar);
-						RenderTarget.FillEllipse(new SharpDX.Direct2D1.Ellipse(new SharpDX.Vector2(xTest, yEdge), r, r), edge);
+						RenderTarget.FillEllipse(new SharpDX.Direct2D1.Ellipse(new SharpDX.Vector2(xTest, yEdge), r, r), markerDx);
 					}
 				}
 			}
@@ -473,8 +477,8 @@ namespace NinjaTrader.NinjaScript.Indicators
 		[Display(Name = "ShowShort", Description = "Kreslit short M2.", Order = 2, GroupName = "Logika")]
 		public bool ShowShort { get; set; }
 
-		[NinjaScriptProperty]
-		[Display(Name = "PreviousM2Mode", Description = "Starší M2 ve stejném směru: Keep = podle stavu, Dim = jako testovaná, Hide = nekreslit.", Order = 3, GroupName = "Logika")]
+		// Zrušeno v 1.0.3 (vzhled určuje jen stav). Skryté, nic nedělá – jen aby se načetly starší workspace.
+		[Browsable(false)]
 		public M2ZonesPreviousMode PreviousM2Mode { get; set; }
 
 		[NinjaScriptProperty]
@@ -488,29 +492,51 @@ namespace NinjaTrader.NinjaScript.Indicators
 
 		// --- Vzhled ---
 		[XmlIgnore]
-		[Display(Name = "LongColor", Order = 10, GroupName = "Vzhled")]
-		public Brush LongColor { get; set; }
+		[Display(Name = "Long – netestovaná", Description = "Barva netestované long M2.", Order = 10, GroupName = "Vzhled")]
+		public Brush LongUntestedColor { get; set; }
 
 		[Browsable(false)]
-		public string LongColorSerializable
+		public string LongUntestedColorSerializable
 		{
-			get { return Serialize.BrushToString(LongColor); }
-			set { LongColor = Serialize.StringToBrush(value); }
+			get { return Serialize.BrushToString(LongUntestedColor); }
+			set { LongUntestedColor = Serialize.StringToBrush(value); }
 		}
 
 		[XmlIgnore]
-		[Display(Name = "ShortColor", Order = 11, GroupName = "Vzhled")]
-		public Brush ShortColor { get; set; }
+		[Display(Name = "Long – testovaná", Description = "Barva testované long M2.", Order = 11, GroupName = "Vzhled")]
+		public Brush LongTestedColor { get; set; }
 
 		[Browsable(false)]
-		public string ShortColorSerializable
+		public string LongTestedColorSerializable
 		{
-			get { return Serialize.BrushToString(ShortColor); }
-			set { ShortColor = Serialize.StringToBrush(value); }
+			get { return Serialize.BrushToString(LongTestedColor); }
+			set { LongTestedColor = Serialize.StringToBrush(value); }
 		}
 
 		[XmlIgnore]
-		[Display(Name = "BrokenColor", Order = 12, GroupName = "Vzhled")]
+		[Display(Name = "Short – netestovaná", Description = "Barva netestované short M2.", Order = 12, GroupName = "Vzhled")]
+		public Brush ShortUntestedColor { get; set; }
+
+		[Browsable(false)]
+		public string ShortUntestedColorSerializable
+		{
+			get { return Serialize.BrushToString(ShortUntestedColor); }
+			set { ShortUntestedColor = Serialize.StringToBrush(value); }
+		}
+
+		[XmlIgnore]
+		[Display(Name = "Short – testovaná", Description = "Barva testované short M2.", Order = 13, GroupName = "Vzhled")]
+		public Brush ShortTestedColor { get; set; }
+
+		[Browsable(false)]
+		public string ShortTestedColorSerializable
+		{
+			get { return Serialize.BrushToString(ShortTestedColor); }
+			set { ShortTestedColor = Serialize.StringToBrush(value); }
+		}
+
+		[XmlIgnore]
+		[Display(Name = "Prolomená", Description = "Barva prolomené M2 (long i short).", Order = 14, GroupName = "Vzhled")]
 		public Brush BrokenColor { get; set; }
 
 		[Browsable(false)]
@@ -520,26 +546,52 @@ namespace NinjaTrader.NinjaScript.Indicators
 			set { BrokenColor = Serialize.StringToBrush(value); }
 		}
 
+		[XmlIgnore]
+		[Display(Name = "Tečka testu", Description = "Barva tečky v místě prvního testu.", Order = 15, GroupName = "Vzhled")]
+		public Brush TestMarkerColor { get; set; }
+
+		[Browsable(false)]
+		public string TestMarkerColorSerializable
+		{
+			get { return Serialize.BrushToString(TestMarkerColor); }
+			set { TestMarkerColor = Serialize.StringToBrush(value); }
+		}
+
+		// Starší workspace (do 1.0.2) měly jednu barvu na směr – načte se do netestované.
+		[Browsable(false)]
+		public string LongColorSerializable
+		{
+			get { return Serialize.BrushToString(LongUntestedColor); }
+			set { LongUntestedColor = Serialize.StringToBrush(value); }
+		}
+
+		[Browsable(false)]
+		public string ShortColorSerializable
+		{
+			get { return Serialize.BrushToString(ShortUntestedColor); }
+			set { ShortUntestedColor = Serialize.StringToBrush(value); }
+		}
+
 		[Range(0, 100)]
-		[Display(Name = "OpacityUntested (%)", Order = 13, GroupName = "Vzhled")]
+		[Display(Name = "Krytí – netestovaná (%)", Order = 16, GroupName = "Vzhled")]
 		public int OpacityUntested { get; set; }
 
 		[Range(0, 100)]
-		[Display(Name = "OpacityTested (%)", Order = 14, GroupName = "Vzhled")]
+		[Display(Name = "Krytí – testovaná (%)", Order = 17, GroupName = "Vzhled")]
 		public int OpacityTested { get; set; }
 
 		[Range(0, 100)]
-		[Display(Name = "OpacityBroken (%)", Order = 15, GroupName = "Vzhled")]
+		[Display(Name = "Krytí – prolomená (%)", Order = 18, GroupName = "Vzhled")]
 		public int OpacityBroken { get; set; }
 
 		[Range(1, 10)]
-		[Display(Name = "EdgeWidth", Description = "Tloušťka hrany.", Order = 16, GroupName = "Vzhled")]
+		[Display(Name = "EdgeWidth", Description = "Tloušťka hrany.", Order = 19, GroupName = "Vzhled")]
 		public int EdgeWidth { get; set; }
 
-		[Display(Name = "ShowTestMarker", Description = "Tečka na hraně v místě prvního testu.", Order = 17, GroupName = "Vzhled")]
+		[Display(Name = "ShowTestMarker", Description = "Tečka na hraně v místě prvního testu.", Order = 20, GroupName = "Vzhled")]
 		public bool ShowTestMarker { get; set; }
 
-		[Display(Name = "ShowChartLabel", Description = "Vypisovat název indikátoru vlevo nahoře v grafu.", Order = 18, GroupName = "Vzhled")]
+		[Display(Name = "ShowChartLabel", Description = "Vypisovat název indikátoru vlevo nahoře v grafu.", Order = 21, GroupName = "Vzhled")]
 		public bool ShowChartLabel { get; set; }
 
 		// --- Svíčky ---
@@ -577,19 +629,19 @@ namespace NinjaTrader.NinjaScript.Indicators
 {
 	public partial class Indicator : NinjaTrader.Gui.NinjaScript.IndicatorRenderBase
 	{
-		private M2Zones[] cacheM2Zones;
-		public M2Zones M2Zones(bool showLong, bool showShort, M2ZonesPreviousMode previousM2Mode, bool showBroken, int maxHistoryBars)
+		private Braunn.M2Zones[] cacheM2Zones;
+		public Braunn.M2Zones M2Zones(bool showLong, bool showShort, bool showBroken, int maxHistoryBars)
 		{
-			return M2Zones(Input, showLong, showShort, previousM2Mode, showBroken, maxHistoryBars);
+			return M2Zones(Input, showLong, showShort, showBroken, maxHistoryBars);
 		}
 
-		public M2Zones M2Zones(ISeries<double> input, bool showLong, bool showShort, M2ZonesPreviousMode previousM2Mode, bool showBroken, int maxHistoryBars)
+		public Braunn.M2Zones M2Zones(ISeries<double> input, bool showLong, bool showShort, bool showBroken, int maxHistoryBars)
 		{
 			if (cacheM2Zones != null)
 				for (int idx = 0; idx < cacheM2Zones.Length; idx++)
-					if (cacheM2Zones[idx] != null && cacheM2Zones[idx].ShowLong == showLong && cacheM2Zones[idx].ShowShort == showShort && cacheM2Zones[idx].PreviousM2Mode == previousM2Mode && cacheM2Zones[idx].ShowBroken == showBroken && cacheM2Zones[idx].MaxHistoryBars == maxHistoryBars && cacheM2Zones[idx].EqualsInput(input))
+					if (cacheM2Zones[idx] != null && cacheM2Zones[idx].ShowLong == showLong && cacheM2Zones[idx].ShowShort == showShort && cacheM2Zones[idx].ShowBroken == showBroken && cacheM2Zones[idx].MaxHistoryBars == maxHistoryBars && cacheM2Zones[idx].EqualsInput(input))
 						return cacheM2Zones[idx];
-			return CacheIndicator<M2Zones>(new M2Zones(){ ShowLong = showLong, ShowShort = showShort, PreviousM2Mode = previousM2Mode, ShowBroken = showBroken, MaxHistoryBars = maxHistoryBars }, input, ref cacheM2Zones);
+			return CacheIndicator<Braunn.M2Zones>(new Braunn.M2Zones(){ ShowLong = showLong, ShowShort = showShort, ShowBroken = showBroken, MaxHistoryBars = maxHistoryBars }, input, ref cacheM2Zones);
 		}
 	}
 }
@@ -598,14 +650,14 @@ namespace NinjaTrader.NinjaScript.MarketAnalyzerColumns
 {
 	public partial class MarketAnalyzerColumn : MarketAnalyzerColumnBase
 	{
-		public Indicators.M2Zones M2Zones(bool showLong, bool showShort, M2ZonesPreviousMode previousM2Mode, bool showBroken, int maxHistoryBars)
+		public Indicators.Braunn.M2Zones M2Zones(bool showLong, bool showShort, bool showBroken, int maxHistoryBars)
 		{
-			return indicator.M2Zones(Input, showLong, showShort, previousM2Mode, showBroken, maxHistoryBars);
+			return indicator.M2Zones(Input, showLong, showShort, showBroken, maxHistoryBars);
 		}
 
-		public Indicators.M2Zones M2Zones(ISeries<double> input , bool showLong, bool showShort, M2ZonesPreviousMode previousM2Mode, bool showBroken, int maxHistoryBars)
+		public Indicators.Braunn.M2Zones M2Zones(ISeries<double> input , bool showLong, bool showShort, bool showBroken, int maxHistoryBars)
 		{
-			return indicator.M2Zones(input, showLong, showShort, previousM2Mode, showBroken, maxHistoryBars);
+			return indicator.M2Zones(input, showLong, showShort, showBroken, maxHistoryBars);
 		}
 	}
 }
@@ -614,14 +666,14 @@ namespace NinjaTrader.NinjaScript.Strategies
 {
 	public partial class Strategy : NinjaTrader.Gui.NinjaScript.StrategyRenderBase
 	{
-		public Indicators.M2Zones M2Zones(bool showLong, bool showShort, M2ZonesPreviousMode previousM2Mode, bool showBroken, int maxHistoryBars)
+		public Indicators.Braunn.M2Zones M2Zones(bool showLong, bool showShort, bool showBroken, int maxHistoryBars)
 		{
-			return indicator.M2Zones(Input, showLong, showShort, previousM2Mode, showBroken, maxHistoryBars);
+			return indicator.M2Zones(Input, showLong, showShort, showBroken, maxHistoryBars);
 		}
 
-		public Indicators.M2Zones M2Zones(ISeries<double> input , bool showLong, bool showShort, M2ZonesPreviousMode previousM2Mode, bool showBroken, int maxHistoryBars)
+		public Indicators.Braunn.M2Zones M2Zones(ISeries<double> input , bool showLong, bool showShort, bool showBroken, int maxHistoryBars)
 		{
-			return indicator.M2Zones(input, showLong, showShort, previousM2Mode, showBroken, maxHistoryBars);
+			return indicator.M2Zones(input, showLong, showShort, showBroken, maxHistoryBars);
 		}
 	}
 }

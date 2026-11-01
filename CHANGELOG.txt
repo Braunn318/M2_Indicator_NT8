@@ -1,3 +1,16 @@
+## 1.0.3 - 2026-11-01
+- Opraveno: starší netestovaná M2 (když ve stejném směru existovala novější) se kreslila jako testovaná. Příčinou byl výchozí režim PreviousM2Mode = Dim, který starší zóny záměrně kreslil stylem testované
+- Vzhled teď určuje jen stav (netestovaná / testovaná / prolomená), stáří zóny ne. PreviousM2Mode zrušen (skrytá vlastnost bez účinku jen kvůli načtení starších workspace)
+- Vlastní barva pro každý stav: Long – netestovaná / testovaná, Short – netestovaná / testovaná, Prolomená, Tečka testu (výchozí: lime / olivová, červená / tmavě oranžová, šedá, černá)
+- Krytí pro každý stav zůstává (netestovaná 70 %, testovaná 12 %, prolomená 8 %); netestovaná plná hrana, testovaná čárkovaná
+- Starší uložená LongColor / ShortColor se načte do barvy netestované
+- Generovaný kód: M2Zones(showLong, showShort, showBroken, maxHistoryBars)
+
+## 1.0.2 - 2026-11-01
+- Netestovaná M2 je výrazně sytější: výchozí OpacityUntested 35 → 70 %, hrana netestované vždy 100 % a o 1 px silnější
+- Testovaná a prolomená beze změny
+- Indikátor je v namespace Indicators.Braunn → v seznamu indikátorů NT8 je ve vlastní složce „Braunn“ (jako TradeSaber)
+
 ## 1.0.1 - 2026-11-01
 - Název M2Zones je vidět v okně Indicators (dřív prázdný řádek)
 - Nová volba ShowChartLabel (název vlevo nahoře v grafu, výchozí vypnuto)

@@ -17,11 +17,13 @@ Vlastní M2 indikátor pro NinjaTrader 8 podle `ZADANI_M2_INDIKATOR.md` (vault T
 | Skupina | Parametr | Default | Co dělá |
 |---|---|---|---|
 | Logika | ShowLong / ShowShort | ano / ano | kreslit long / short M2 |
-| Logika | PreviousM2Mode | Dim | starší M2 ve stejném směru: Keep = podle stavu, Dim = jako testovaná, Hide = nekreslit |
 | Logika | ShowBroken | ano | prolomené M2 šedě (backtest); vypnuto = čistší live graf |
 | Logika | MaxHistoryBars | 2000 | jak daleko dozadu držet prolomené zóny (0 = bez limitu) |
-| Vzhled | LongColor / ShortColor / BrokenColor | zelená / červená / šedá | |
-| Vzhled | OpacityUntested / Tested / Broken | 35 / 12 / 8 % | krytí boxu |
+| Vzhled | Long – netestovaná / Long – testovaná | lime / olivová | barva long M2 podle stavu |
+| Vzhled | Short – netestovaná / Short – testovaná | červená / tmavě oranžová | barva short M2 podle stavu |
+| Vzhled | Prolomená | šedá | long i short |
+| Vzhled | Tečka testu | černá | tečka v místě prvního testu |
+| Vzhled | Krytí – netestovaná / testovaná / prolomená | 70 / 12 / 8 % | krytí boxu |
 | Vzhled | EdgeWidth | 1 | tloušťka hrany |
 | Vzhled | ShowTestMarker | ano | tečka na hraně v místě prvního testu |
 | Vzhled | ShowChartLabel | ne | vypisovat název indikátoru vlevo nahoře v grafu (v okně Indicators je název vidět vždy) |
@@ -33,18 +35,19 @@ Vlastní M2 indikátor pro NinjaTrader 8 podle `ZADANI_M2_INDIKATOR.md` (vault T
   svíčkou celou nad jejím high – **nemusí jít o hned další svíčku**. Novější negativní svíčka před
   potvrzením starého kandidáta zruší. Short zrcadlově. Close přesně na 50 % = není M2.
 - **Box** = range M2 svíčky od M2 po potvrzovací svíčku. **Hrana** = čára od potvrzení doprava.
-- **Netestovaná**: plná barva. **Testovaná** (první dotek hrany po potvrzení): slabší, přerušovaná.
+- **Netestovaná**: sytá barva, plná hrana. **Testovaná** (první dotek hrany po potvrzení): jiná barva, slabší, přerušovaná.
   **Prolomená** (close za opačnou hranou, ne knot): šedá, hrana končí na svíčce prolomení, zůstává v grafu.
-- Hrana a obrys boxu mají krytí 3× krytí boxu (min. 25 %), aby byly čitelné i u slabých stavů.
-- „Aktivní" M2 v každém směru = nejnovější potvrzená neprolomená. Když se prolomí, aktivní se stane
-  předchozí neprolomená.
+- Vzhled určuje **jen stav**. Starší M2 (napravo už je novější ve stejném směru) se kreslí úplně stejně
+  jako nejnovější – netestovaná zůstane netestovaná.
+- Hrana a obrys testované / prolomené mají krytí 3× krytí boxu (min. 25 %); netestovaná má hranu vždy 100 %.
 
 ## 5. Co ověřit (§7 zadání)
 - [ ] Seznam **Drawing Objects** (Ctrl+B) je prázdný – indikátor nevytváří žádné objekty.
 - [ ] Vlevo nahoře v grafu není text `M2Zones(...)` a v Data Boxu žádný řádek.
       *Pokud text vlevo nahoře přesto zůstane, napiš mi – řešením je krátký `Name` místo prázdného `DisplayName`.*
 - [ ] ES 12-26, 1 min, 21:00–21:12 (screen `M2-indikator-LTA-screen.png`): M2 svíčka s deltou 97 se
-      potvrdí svíčkou s deltou 391 a vykreslí se; starší M2 (delta −1009) podle PreviousM2Mode.
+      potvrdí svíčkou s deltou 391 a vykreslí se; starší M2 (delta −1009) se kreslí podle svého stavu.
+- [ ] ES 12-26, 1 min, 30. 10. 20:50: netestovaná long M2 je sytá s plnou hranou, i když napravo jsou novější long M2.
 - [ ] Po doteku hrany zóna zeslábne; po zavření za opačnou hranou zešedne a přestane se prodlužovat.
 - [ ] **Playback**: zóna se objeví až po uzavření potvrzovací svíčky a nikdy se neposune ani nezmizí
       jinak než změnou stavu. Přechod Historical → Realtime zóny nesmaže.
@@ -63,6 +66,9 @@ Prověřeno 1. 11. 2026:
 - Chyba v Logu `Indicator 'Footprints' … only 4 bars` patří vendor indikátoru Footprints (málo barů), ne M2Zones.
 
 ## Historie
+- **1.0.3 (2026-11-01)** – opraveno: starší netestovaná M2 se kreslila jako testovaná (režim Dim, zrušen –
+  vzhled určuje jen stav); vlastní barva pro každý stav (long/short × netestovaná/testovaná, prolomená, tečka testu).
+- **1.0.2 (2026-11-01)** – netestovaná M2 sytější (výchozí OpacityUntested 70 %, hrana 100 % a +1 px).
 - **1.0.1 (2026-11-01)** – název M2Zones je vidět v okně Indicators (dřív prázdný řádek); nová volba
   ShowChartLabel; kreslení drží zámek jen na kopii dat (datové vlákno nečeká na vykreslení); zmrazené brushe.
 - **1.0 (2026-10-31)** – první verze.
