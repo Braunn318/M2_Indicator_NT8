@@ -19,8 +19,8 @@ Vlastní M2 indikátor pro NinjaTrader 8 podle `ZADANI_M2_INDIKATOR.md` (vault T
 | Logika | ShowLong / ShowShort | ano / ano | kreslit long / short M2 |
 | Logika | ShowBroken | ano | prolomené M2 šedě (backtest); vypnuto = čistší live graf |
 | Logika | MaxHistoryBars | 2000 | jak daleko dozadu držet prolomené zóny (0 = bez limitu) |
-| Vzhled | Long – netestovaná / Long – testovaná | lime / olivová | barva long M2 podle stavu |
-| Vzhled | Short – netestovaná / Short – testovaná | červená / tmavě oranžová | barva short M2 podle stavu |
+| Vzhled | Long – netestovaná / Long – testovaná | lime / lime | barva long M2 podle stavu; výchozí stejná, liší se krytím |
+| Vzhled | Short – netestovaná / Short – testovaná | červená / červená | barva short M2 podle stavu; výchozí stejná, liší se krytím |
 | Vzhled | Prolomená | šedá | long i short |
 | Vzhled | Tečka testu | černá | tečka v místě prvního testu |
 | Vzhled | Krytí – netestovaná / testovaná / prolomená | 70 / 12 / 8 % | krytí boxu |
@@ -35,7 +35,7 @@ Vlastní M2 indikátor pro NinjaTrader 8 podle `ZADANI_M2_INDIKATOR.md` (vault T
   svíčkou celou nad jejím high – **nemusí jít o hned další svíčku**. Novější negativní svíčka před
   potvrzením starého kandidáta zruší. Short zrcadlově. Close přesně na 50 % = není M2.
 - **Box** = range M2 svíčky od M2 po potvrzovací svíčku. **Hrana** = čára od potvrzení doprava.
-- **Netestovaná**: sytá barva, plná hrana. **Testovaná** (první dotek hrany po potvrzení): jiná barva, slabší, přerušovaná.
+- **Netestovaná**: sytá barva, plná hrana. **Testovaná** (první dotek hrany po potvrzení): stejná barva, nízké krytí, přerušovaná.
   **Prolomená** (close za opačnou hranou, ne knot): šedá, hrana končí na svíčce prolomení, zůstává v grafu.
 - Vzhled určuje **jen stav**. Starší M2 (napravo už je novější ve stejném směru) se kreslí úplně stejně
   jako nejnovější – netestovaná zůstane netestovaná.

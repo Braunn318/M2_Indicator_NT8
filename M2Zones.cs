@@ -217,9 +217,9 @@ namespace NinjaTrader.NinjaScript.Indicators.Braunn
 				MaxHistoryBars				= 2000;
 
 				LongUntestedColor			= Brushes.LimeGreen;
-				LongTestedColor				= Brushes.Olive;
+				LongTestedColor				= Brushes.LimeGreen;
 				ShortUntestedColor			= Brushes.Red;
-				ShortTestedColor			= Brushes.DarkOrange;
+				ShortTestedColor			= Brushes.Red;
 				BrokenColor					= Brushes.Gray;
 				TestMarkerColor				= Brushes.Black;
 				OpacityUntested				= 70;
