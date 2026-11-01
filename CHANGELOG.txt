@@ -4,6 +4,7 @@
 - Kreslení drží zámek jen na kopii dat, NT API volá až mimo zámek (datové vlákno nečeká na vykreslení)
 - Zmrazené brushe
 - Projekt přesunut do vlastního repozitáře github.com/Braunn318/M2_Indicator_NT8
+- Instalační cesta v dokumentaci: Indicators\Braunn\M2Zones.cs
 
 ## 1.0 - 2026-10-31
 - První verze podle ZADANI_M2_INDIKATOR.md v1.0

@@ -9,7 +9,7 @@
 //                     jen na kopii dat, NT API volá až mimo zámek; zmrazené brushe; ShowChartLabel.
 //
 // Zdroják: F:\Trading\DEV\M2 Indicator\M2Zones.cs (github.com/Braunn318/M2_Indicator_NT8)
-// Instalace: Documents\NinjaTrader 8\bin\Custom\Indicators\M2Zones.cs, kompilace F5 v NinjaScript Editoru.
+// Instalace: Documents\NinjaTrader 8\bin\Custom\Indicators\Braunn\M2Zones.cs, kompilace F5 v NinjaScript Editoru.
 
 #region Using declarations
 using System;

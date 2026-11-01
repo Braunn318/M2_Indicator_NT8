@@ -3,7 +3,7 @@
 Vlastní M2 indikátor pro NinjaTrader 8 podle `ZADANI_M2_INDIKATOR.md` (vault Trading coach).
 
 ## 1. Instalace
-1. `M2Zones.cs` už je zkopírovaný v `Documents\NinjaTrader 8\bin\Custom\Indicators\`
+1. `M2Zones.cs` už je zkopírovaný v `Documents\NinjaTrader 8\bin\Custom\Indicators\Braunn\`
    (master kopie je tady, v `F:\Trading\DEV\M2 Indicator\`, repozitář
    [github.com/Braunn318/M2_Indicator_NT8](https://github.com/Braunn318/M2_Indicator_NT8)).
 2. NT8 → **New → NinjaScript Editor** → otevřít `Indicators\M2Zones` → **F5** (kompilace).
