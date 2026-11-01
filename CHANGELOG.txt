@@ -1,0 +1,9 @@
+## 1.0.1 - 2026-11-01
+- Název M2Zones je vidět v okně Indicators (dřív prázdný řádek)
+- Nová volba ShowChartLabel (název vlevo nahoře v grafu, výchozí vypnuto)
+- Kreslení drží zámek jen na kopii dat, NT API volá až mimo zámek (datové vlákno nečeká na vykreslení)
+- Zmrazené brushe
+- Projekt přesunut do vlastního repozitáře github.com/Braunn318/M2_Indicator_NT8
+
+## 1.0 - 2026-10-31
+- První verze podle ZADANI_M2_INDIKATOR.md v1.0
