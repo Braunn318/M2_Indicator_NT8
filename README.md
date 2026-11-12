@@ -19,6 +19,9 @@ Vlastní M2 indikátor pro NinjaTrader 8 podle `ZADANI_M2_INDIKATOR.md` (vault T
 | Logika | ShowLong / ShowShort | ano / ano | kreslit long / short M2 |
 | Logika | ShowBroken | ano | prolomené M2 šedě (backtest); vypnuto = čistší live graf |
 | Logika | MaxHistoryBars | 2000 | jak daleko dozadu držet prolomené zóny (0 = bez limitu) |
+| Logika | CandidateMode | AllPending | **1.1**: AllPending = každá negativní / pozitivní svíčka čeká, dokud se nepotvrdí nebo nezruší; OnlyLast = chování 1.0.x (jen pro porovnání) |
+| Logika | MaxPendingBars | 0 | **1.1**: kandidát starší než N svíček se zahodí (jen výkon); 0 = bez limitu |
+| Ladění | DebugLog | ne | **1.1**: výpis každé události do NinjaScript Output (viz kap. 4) |
 | Vzhled | Long – netestovaná / Long – testovaná | lime / lime | barva long M2 podle stavu; výchozí stejná, liší se krytím |
 | Vzhled | Short – netestovaná / Short – testovaná | červená / červená | barva short M2 podle stavu; výchozí stejná, liší se krytím |
 | Vzhled | Prolomená | šedá | long i short |
@@ -31,9 +34,16 @@ Vlastní M2 indikátor pro NinjaTrader 8 podle `ZADANI_M2_INDIKATOR.md` (vault T
 | Svíčky | ColorAbove50 / ColorBelow50 | zelená / červená | |
 
 ## 4. Jak kreslí
-- **M2 long** = poslední svíčka s close pod 50 % range (barva nerozhoduje), potvrzená první pozdější
-  svíčkou celou nad jejím high – **nemusí jít o hned další svíčku**. Novější negativní svíčka před
-  potvrzením starého kandidáta zruší. Short zrcadlově. Close přesně na 50 % = není M2.
+- **M2 long** = svíčka s close pod 50 % range (barva nerozhoduje), potvrzená první pozdější
+  svíčkou celou nad jejím high – **nemusí jít o hned další svíčku**. Short zrcadlově. Close přesně na 50 % = není M2.
+- **Čekající kandidáti (1.1, AllPending)**: každá negativní svíčka čeká na potvrzení, i když mezitím vznikne
+  novější negativní – ta ji nepřepíše. Kandidát se zruší, když nějaká svíčka **zavře** pod jeho low dřív, než
+  přišlo potvrzení (short: zavře nad high). Jedna svíčka může potvrdit víc kandidátů najednou.
+  Pořadí na každé svíčce: potvrzení / zrušení čekajících → test / prolomení zón → svíčka sama jako nový kandidát.
+  Čekající kandidáti se nekreslí. `CandidateMode = OnlyLast` vrátí chování 1.0.x (novější kandidát starého přepíše).
+- **DebugLog**: zapnout v nastavení indikátoru (Ladění → DebugLog), výpis je v **New → NinjaScript Output**.
+  Řádek: `čas M2 | LONG/SHORT | KANDIDÁT / POTVRZENO svíčkou HH:mm:ss / ZRUŠENO svíčkou … / TEST … / PROLOMENO … | high | low`.
+  Časy jsou časy svíček na ose grafu NT8. Na 10 dnech 1min dat je výpis dlouhý – zapínat jen na kontrolu.
 - **Box** = range M2 svíčky od M2 po potvrzovací svíčku. **Hrana** = čára od potvrzení doprava.
 - **Netestovaná**: sytá barva, plná hrana. **Testovaná** (první dotek hrany po potvrzení): stejná barva, nízké krytí, přerušovaná.
   **Prolomená** (close za opačnou hranou, ne knot): šedá, hrana končí na svíčce prolomení, zůstává v grafu.
@@ -54,6 +64,10 @@ Vlastní M2 indikátor pro NinjaTrader 8 podle `ZADANI_M2_INDIKATOR.md` (vault T
 - [ ] 3 replay dny MES: indikátor označí stejné M2 jako ty ručně. Rozdíly oproti CandleBreakoutPremiumV2
       by měly jít vysvětlit definicí (hlavně potvrzení o víc svíček později).
 - [ ] Změna barev / krytí se projeví bez chyb; graf několikrát zavřít a otevřít (Log bez chyb).
+- [ ] **1.1** ES 12-26, 1 min, 12. 11. 2026: long M2 16:51 se vykreslí (box 16:51 → 16:54, hrana ≈ 7628,50),
+      i když 16:53 vznikla negativní svíčka. V DebugLog řádek `… 16:51:00 | LONG | POTVRZENO svíčkou 16:54:00 | …`.
+- [ ] **1.1** CandidateMode = OnlyLast: M2 16:51 zmizí (staré chování).
+- [ ] **1.1** Porovnání s CW Challenger (M2), 12. 11. 2026 14:00–16:45: každý rozdíl jde vysvětlit pravidly (DebugLog).
 
 ## 6. Když replay / OF graf nic neukazuje (není to M2Zones)
 Prověřeno 1. 11. 2026:
@@ -66,6 +80,11 @@ Prověřeno 1. 11. 2026:
 - Chyba v Logu `Indicator 'Footprints' … only 4 bars` patří vendor indikátoru Footprints (málo barů), ne M2Zones.
 
 ## Historie
+- **1.1.0 (2026-11-12)** – opraveno: M2 potvrzená až po vzniku novější negativní (pozitivní) svíčky se nevykreslila
+  (např. ES 12. 11. 16:51). Nový režim CandidateMode = AllPending (default): všichni kandidáti čekají, dokud se
+  nepotvrdí nebo nezruší (close za opačnou hranou). OnlyLast = staré chování. Nové MaxPendingBars a DebugLog.
+- **1.0.4 (2026-11-04)** – opraveno: neutrální svíčka (close přesně na 50 % range) se u CL, GC, 6E, SI… kvůli
+  zaokrouhlení desetinných čísel často brala jako negativní / pozitivní a mohla se stát M2. Teď je vždy neutrální.
 - **1.0.3 (2026-11-01)** – opraveno: starší netestovaná M2 se kreslila jako testovaná (režim Dim, zrušen –
   vzhled určuje jen stav); vlastní barva pro každý stav (long/short × netestovaná/testovaná, prolomená, tečka testu).
 - **1.0.2 (2026-11-01)** – netestovaná M2 sytější (výchozí OpacityUntested 70 %, hrana 100 % a +1 px).

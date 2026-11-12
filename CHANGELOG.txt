@@ -1,3 +1,16 @@
+## 1.1.0 - 2026-11-12
+- Opraveno: M2Zones nevykreslila M2, které byly podle definice potvrzené. V každém směru se držel jen jeden čekající kandidát a každá novější negativní (u longu) svíčka ho přepsala – když potvrzení přišlo až po ní, starší M2 zmizela (např. ES 12. 11. 2026: long M2 16:51, potvrzená 16:54, mezitím negativní 16:53)
+- Nový režim CandidateMode = AllPending (výchozí, zadání 1.1 §2): každá negativní / pozitivní svíčka zůstává kandidátem, dokud se nepotvrdí (svíčka celá za hranou) nebo nezruší (svíčka zavře za opačnou hranou). Jedna svíčka může potvrdit víc kandidátů. Pořadí na svíčce: potvrzení / zrušení → test / prolomení zón → nový kandidát
+- CandidateMode = OnlyLast vrací chování 1.0.x (jen pro porovnání; ověřeno shodné s 1.0.4 na 20 000 barech)
+- Nové MaxPendingBars (0 = bez limitu) a DebugLog (výpis kandidátů, potvrzení, zrušení, testů a prolomení do NinjaScript Output)
+- Nové parametry nemají [NinjaScriptProperty] – volání M2Zones(showLong, showShort, showBroken, maxHistoryBars) i uložené šablony zůstávají
+- M2 Trend AOS bere engine z M2Zones: po překompilování v NT8 obchoduje i M2 z režimu AllPending (stejné zóny, jaké kreslí graf)
+- Opraveno: běžící NT8 po zkopírování M2Zones.cs přepsal generovaný kód na neexistující M2ZonesCore.M2Zones (bral první namespace v souboru; stalo by se i u 1.0.4). Engine je teď v souboru až za třídou indikátoru, soubor má jednotně konce řádků CRLF
+
+## 1.0.4 - 2026-11-04
+- Opraveno: neutrální svíčka (close přesně na 50 % range) se mohla vzít jako M2. Porovnání close*2 s high+low bylo přesné na desetinná čísla počítače, takže u ticků 0.01 / 0.1 / 0.005 / 0.00005 (CL, GC, SI, 6E, 6J) vyšlo zhruba u čtvrtiny neutrálních svíček „negativní" nebo „pozitivní". Teď se porovnává s tolerancí 1e-9 × cena (o řády pod jedním tickem) – neutrální svíčka není nikdy kandidát M2 ani se neobarví. ES / NQ / YM / ZB se to netýkalo
+- M2 Trend AOS (C#) bere engine z M2Zones – po aktualizaci M2Zones.cs stačí v NT8 překompilovat
+
 ## 1.0.3 - 2026-11-01
 - Opraveno: starší netestovaná M2 (když ve stejném směru existovala novější) se kreslila jako testovaná. Příčinou byl výchozí režim PreviousM2Mode = Dim, který starší zóny záměrně kreslil stylem testované
 - Vzhled teď určuje jen stav (netestovaná / testovaná / prolomená), stáří zóny ne. PreviousM2Mode zrušen (skrytá vlastnost bez účinku jen kvůli načtení starších workspace)

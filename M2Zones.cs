@@ -1,11 +1,17 @@
-// M2Zones – M2 zóny pro NinjaTrader 8 (zadání ZADANI_M2_INDIKATOR.md v1.0, 31. 10. 2026)
+// M2Zones – M2 zóny pro NinjaTrader 8 (zadání ZADANI_M2_INDIKATOR.md v1.1, 12. 11. 2026)
 //
 // - Žádné Draw.* objekty: vše se kreslí v OnRender přes SharpDX.
 // - Žádný popisek vlevo nahoře (v grafu DisplayName = "", lze zapnout ShowChartLabel) a žádný řádek v Data Boxu.
 // - Netestovaná / testovaná / prolomená M2; prolomená zůstává v grafu šedě.
 // - Vzhled určuje jen stav (netestovaná / testovaná / prolomená), nikdy stáří zóny.
-// - Calculate.OnBarClose, bez repaintu.
+// - Calculate.OnBarClose, bez repaintu. Čekající kandidáti se nekreslí.
 //
+// 1.1.0 (2026-11-12): režim „všichni čekající" (CandidateMode = AllPending, default) – každá negativní / pozitivní
+//                     svíčka čeká, dokud se nepotvrdí nebo nezruší (close za opačnou hranou); novější ji nepřepíše.
+//                     Pořadí na svíčce: potvrzení / zrušení → stav zón → nový kandidát. OnlyLast = chování 1.0.x.
+//                     Nové MaxPendingBars (0 = bez limitu) a DebugLog (výpis do NinjaScript Output).
+// 1.0.4 (2026-11-04): neutrální svíčka (close přesně na 50 % range) se už nikdy nebere jako M2 – dřív se u CL, GC,
+//                     6E, SI… kvůli zaokrouhlení double často vyhodnotila jako negativní / pozitivní.
 // 1.0.3 (2026-11-01): zrušeno ztlumení starších M2 (Dim kreslil starší netestovanou jako testovanou);
 //                     vlastní barva pro každý stav (long/short × netestovaná/testovaná, prolomená, tečka testu).
 // 1.0.2 (2026-11-01): netestovaná M2 sytější – výchozí OpacityUntested 70 %, hrana vždy 100 % a o 1 px silnější.
@@ -34,124 +40,6 @@ public enum M2ZonesPreviousMode
 	Dim,
 	Hide
 }
-
-// ==== M2 ENGINE BEGIN ====
-// Čistá logika bez závislosti na NinjaTraderu (testuje se samostatně).
-namespace NinjaTrader.NinjaScript.Indicators.M2ZonesCore
-{
-	using System;
-	using System.Collections.Generic;
-
-	public enum M2ZoneState
-	{
-		Untested,
-		Tested,
-		Broken
-	}
-
-	public class M2Zone
-	{
-		public bool			IsLong;
-		public int			M2Bar;
-		public int			ConfBar;
-		public double		High;
-		public double		Low;
-		public M2ZoneState	State		= M2ZoneState.Untested;
-		public int			TestBar		= -1;
-		public int			BrokenBar	= -1;
-
-		// Hrana M2 = vstupní úroveň (long: High, short: Low).
-		public double Edge { get { return IsLong ? High : Low; } }
-	}
-
-	public class M2Engine
-	{
-		private class Candidate
-		{
-			public int		Bar;
-			public double	High;
-			public double	Low;
-		}
-
-		private readonly List<M2Zone>	zones = new List<M2Zone>();
-		private Candidate				longCandidate;
-		private Candidate				shortCandidate;
-
-		public readonly object	Sync			= new object();
-		public int				MaxHistoryBars	= 2000;
-		public int				LastBar			= -1;
-
-		// Pro čtení zamknout Sync (OnRender běží v jiném vlákně než OnBarUpdate).
-		public List<M2Zone> Zones { get { return zones; } }
-
-		// Negativní svíčka: close pod 50 % range. Přesně 50 % = ani negativní, ani pozitivní.
-		public static bool IsNegative(double high, double low, double close) { return close * 2.0 < high + low; }
-		public static bool IsPositive(double high, double low, double close) { return close * 2.0 > high + low; }
-
-		// Volat jednou za každou UZAVŘENOU svíčku, ve vzestupném pořadí indexů.
-		public void AddBar(int bar, double high, double low, double close)
-		{
-			lock (Sync)
-			{
-				if (bar <= LastBar)
-					return;
-				LastBar = bar;
-
-				// (a) Stav potvrzených zón – test hrany a prolomení (close za opačnou hranou).
-				for (int i = 0; i < zones.Count; i++)
-				{
-					M2Zone z = zones[i];
-					if (z.State == M2ZoneState.Broken)
-						continue;
-
-					bool touched	= z.IsLong ? low <= z.High : high >= z.Low;
-					bool broken		= z.IsLong ? close < z.Low : close > z.High;
-
-					if (touched && z.TestBar < 0)
-						z.TestBar = bar;
-
-					if (broken)
-					{
-						z.State		= M2ZoneState.Broken;
-						z.BrokenBar	= bar;
-					}
-					else if (touched && z.State == M2ZoneState.Untested)
-						z.State = M2ZoneState.Tested;
-				}
-
-				// (b) Potvrzení kandidáta – svíčka celá nad High (long) / celá pod Low (short).
-				//     Nemusí jít o bezprostředně následující svíčku.
-				if (longCandidate != null && low > longCandidate.High)
-				{
-					zones.Add(NewZone(true, longCandidate, bar));
-					longCandidate = null;
-				}
-				if (shortCandidate != null && high < shortCandidate.Low)
-				{
-					zones.Add(NewZone(false, shortCandidate, bar));
-					shortCandidate = null;
-				}
-
-				// (c) Nový kandidát – novější negativní (long) / pozitivní (short) svíčka nahradí
-				//     starého kandidáta, který zaniká bez vykreslení.
-				if (IsNegative(high, low, close))
-					longCandidate = new Candidate { Bar = bar, High = high, Low = low };
-				else if (IsPositive(high, low, close))
-					shortCandidate = new Candidate { Bar = bar, High = high, Low = low };
-
-				// (d) Prolomené zóny starší než MaxHistoryBars ven.
-				if (MaxHistoryBars > 0)
-					zones.RemoveAll(z => z.State == M2ZoneState.Broken && bar - z.BrokenBar > MaxHistoryBars);
-			}
-		}
-
-		private static M2Zone NewZone(bool isLong, Candidate c, int confBar)
-		{
-			return new M2Zone { IsLong = isLong, M2Bar = c.Bar, ConfBar = confBar, High = c.High, Low = c.Low };
-		}
-	}
-}
-// ==== M2 ENGINE END ====
 
 // Namespace .Braunn = složka „Braunn“ v seznamu indikátorů NT8 (stejně jako TradeSaber). Neměnit.
 namespace NinjaTrader.NinjaScript.Indicators.Braunn
@@ -188,6 +76,11 @@ namespace NinjaTrader.NinjaScript.Indicators.Braunn
 		// Jen pro vlákno OnRender.
 		private readonly List<ZoneView> views = new List<ZoneView>();
 
+		// Jen pro datové vlákno (DebugLog).
+		private readonly List<M2Event> pendingEvents = new List<M2Event>();
+
+		private const string M2ZonesVersion = "1.1.0";
+
 		// V okně Indicators (klony ve SetDefaults / Configure) je vidět název.
 		// V běžícím grafu se text vlevo nahoře nevypisuje, pokud není zapnuté ShowChartLabel.
 		public override string DisplayName
@@ -215,6 +108,9 @@ namespace NinjaTrader.NinjaScript.Indicators.Braunn
 				PreviousM2Mode				= M2ZonesPreviousMode.Keep;
 				ShowBroken					= true;
 				MaxHistoryBars				= 2000;
+				CandidateMode				= M2ZonesCandidateMode.AllPending;
+				MaxPendingBars				= 0;
+				DebugLog					= false;
 
 				LongUntestedColor			= Brushes.LimeGreen;
 				LongTestedColor				= Brushes.LimeGreen;
@@ -249,7 +145,13 @@ namespace NinjaTrader.NinjaScript.Indicators.Braunn
 			{
 				// Zóny vznikají jen tady; přechod Historical -> Realtime je nemaže.
 				engine = new M2Engine();
-				engine.MaxHistoryBars = MaxHistoryBars;
+				engine.MaxHistoryBars	= MaxHistoryBars;
+				engine.Mode				= CandidateMode;
+				engine.MaxPendingBars	= MaxPendingBars;
+				engine.CollectEvents	= DebugLog;
+				if (DebugLog)
+					Print(string.Format("M2Zones {0} | {1} | CandidateMode {2}, MaxPendingBars {3} | čas M2 | směr | událost | high | low",
+						M2ZonesVersion, Instrument != null ? Instrument.FullName : "", CandidateMode, MaxPendingBars));
 			}
 			else if (State == State.Terminated)
 			{
@@ -265,6 +167,9 @@ namespace NinjaTrader.NinjaScript.Indicators.Braunn
 			double h = High[0], l = Low[0], c = Close[0];
 			engine.AddBar(CurrentBar, h, l, c);
 
+			if (DebugLog)
+				PrintEvents();
+
 			if (EnableCandleColoring)
 			{
 				if (M2Engine.IsPositive(h, l, c))
@@ -272,6 +177,37 @@ namespace NinjaTrader.NinjaScript.Indicators.Braunn
 				else if (M2Engine.IsNegative(h, l, c))
 					BarBrushes[0] = ColorBelow50;
 			}
+		}
+
+		// Ladicí výpis: jeden řádek na událost, mimo zámek enginu. Časy = časy svíček na ose grafu NT8.
+		private void PrintEvents()
+		{
+			pendingEvents.Clear();
+			engine.TakeEvents(pendingEvents);
+
+			for (int i = 0; i < pendingEvents.Count; i++)
+			{
+				M2Event e = pendingEvents[i];
+				string what;
+				switch (e.Kind)
+				{
+					case M2EventKind.Candidate:	what = "KANDIDÁT"; break;
+					case M2EventKind.Confirmed:	what = "POTVRZENO svíčkou " + BarTime(e.EventBar); break;
+					case M2EventKind.Cancelled:	what = "ZRUŠENO svíčkou " + BarTime(e.EventBar); break;
+					case M2EventKind.Expired:	what = "ZAHOZENO (MaxPendingBars) " + BarTime(e.EventBar); break;
+					case M2EventKind.Tested:	what = "TEST " + BarTime(e.EventBar); break;
+					default:					what = "PROLOMENO " + BarTime(e.EventBar); break;
+				}
+				Print(string.Format("{0} | {1} | {2} | {3} | {4}",
+					Bars.GetTime(e.M2Bar).ToString("yyyy-MM-dd HH:mm:ss"), e.IsLong ? "LONG" : "SHORT", what,
+					Instrument.MasterInstrument.FormatPrice(e.High), Instrument.MasterInstrument.FormatPrice(e.Low)));
+			}
+			pendingEvents.Clear();
+		}
+
+		private string BarTime(int bar)
+		{
+			return Bars.GetTime(bar).ToString("HH:mm:ss");
 		}
 
 		#region Render
@@ -490,6 +426,19 @@ namespace NinjaTrader.NinjaScript.Indicators.Braunn
 		[Display(Name = "MaxHistoryBars", Description = "Jak daleko dozadu (v barech) držet prolomené zóny. 0 = neomezeně.", Order = 5, GroupName = "Logika")]
 		public int MaxHistoryBars { get; set; }
 
+		// Nové v 1.1. Bez [NinjaScriptProperty] – generovaný M2Zones(showLong, showShort, showBroken, maxHistoryBars)
+		// zůstává stejný (volá ho M2 Trend AOS).
+		[Display(Name = "CandidateMode", Description = "AllPending = každá negativní / pozitivní svíčka čeká na potvrzení, dokud se nepotvrdí nebo nezruší (close za opačnou hranou). OnlyLast = chování 1.0.x (jen nejnovější kandidát v každém směru), jen pro porovnání.", Order = 6, GroupName = "Logika")]
+		public M2ZonesCandidateMode CandidateMode { get; set; }
+
+		[Range(0, int.MaxValue)]
+		[Display(Name = "MaxPendingBars", Description = "AllPending: kandidát starší než N svíček se zahodí (jen kvůli výkonu). 0 = bez limitu.", Order = 7, GroupName = "Logika")]
+		public int MaxPendingBars { get; set; }
+
+		// --- Ladění ---
+		[Display(Name = "DebugLog", Description = "Vypisovat do NinjaScript Output každou událost: kandidát, potvrzení (kým), zrušení, test, prolomení.", Order = 1, GroupName = "Ladění")]
+		public bool DebugLog { get; set; }
+
 		// --- Vzhled ---
 		[XmlIgnore]
 		[Display(Name = "Long – netestovaná", Description = "Barva netestované long M2.", Order = 10, GroupName = "Vzhled")]
@@ -622,6 +571,236 @@ namespace NinjaTrader.NinjaScript.Indicators.Braunn
 		#endregion
 	}
 }
+
+// ==== M2 ENGINE BEGIN ====
+// Čistá logika bez závislosti na NinjaTraderu (testuje se samostatně).
+// Engine MUSÍ být až za třídou indikátoru: generátor kódu NT8 bere první namespace Indicators.* v souboru
+// a s enginem nahoře přepsal generovaný region na neexistující M2ZonesCore.M2Zones (ověřeno 12. 11. 2026,
+// i u 1.0.4). Nepřesouvat nahoru.
+
+// AllPending (1.1): každá negativní / pozitivní svíčka čeká, dokud se nepotvrdí nebo nezruší.
+// OnlyLast: chování 1.0.x – v každém směru jen nejnovější kandidát, novější ho přepíše. Jen pro porovnání.
+// Globální namespace jako M2ZonesPreviousMode (enum vlastnosti indikátoru).
+public enum M2ZonesCandidateMode
+{
+	AllPending,
+	OnlyLast
+}
+
+namespace NinjaTrader.NinjaScript.Indicators.M2ZonesCore
+{
+	using System;
+	using System.Collections.Generic;
+
+	public enum M2ZoneState
+	{
+		Untested,
+		Tested,
+		Broken
+	}
+
+	public class M2Zone
+	{
+		public bool			IsLong;
+		public int			M2Bar;
+		public int			ConfBar;
+		public double		High;
+		public double		Low;
+		public M2ZoneState	State		= M2ZoneState.Untested;
+		public int			TestBar		= -1;
+		public int			BrokenBar	= -1;
+
+		// Hrana M2 = vstupní úroveň (long: High, short: Low).
+		public double Edge { get { return IsLong ? High : Low; } }
+	}
+
+	public enum M2EventKind
+	{
+		Candidate,
+		Confirmed,
+		Cancelled,
+		Expired,
+		Tested,
+		Broken
+	}
+
+	// Událost pro ladicí výpis (DebugLog). M2Bar = svíčka M2 / kandidáta, EventBar = svíčka, která událost způsobila.
+	public struct M2Event
+	{
+		public M2EventKind	Kind;
+		public bool			IsLong;
+		public int			M2Bar;
+		public int			EventBar;
+		public double		High;
+		public double		Low;
+	}
+
+	public class M2Engine
+	{
+		private class Candidate
+		{
+			public int		Bar;
+			public double	High;
+			public double	Low;
+		}
+
+		private readonly List<M2Zone>		zones			= new List<M2Zone>();
+		private readonly List<Candidate>	longPending		= new List<Candidate>();
+		private readonly List<Candidate>	shortPending	= new List<Candidate>();
+		private readonly List<M2Event>		events			= new List<M2Event>();
+
+		public readonly object	Sync			= new object();
+		public int				MaxHistoryBars	= 2000;
+		public int				LastBar			= -1;
+
+		public M2ZonesCandidateMode	Mode			= M2ZonesCandidateMode.AllPending;
+		// AllPending: kandidát starší než N svíček se zahodí (jen kvůli výkonu). 0 = bez limitu.
+		public int				MaxPendingBars	= 0;
+		// true = sbírat události pro ladicí výpis (TakeEvents). false = žádná režie.
+		public bool				CollectEvents;
+
+		public int PendingCount { get { lock (Sync) return longPending.Count + shortPending.Count; } }
+
+		// Pro čtení zamknout Sync (OnRender běží v jiném vlákně než OnBarUpdate).
+		public List<M2Zone> Zones { get { return zones; } }
+
+		// Negativní svíčka: close pod 50 % range. Přesně 50 % = ani negativní, ani pozitivní (neutrální, nikdy M2).
+		// Ceny jsou double: u ticků jako 0.01 / 0.1 / 0.00005 (CL, GC, 6E) vyjde u neutrální svíčky
+		// close*2 a high+low rozdílně o ~1e-14. Proto tolerance 1e-9 × cena – o řády pod jedním tickem.
+		private const double RelEps = 1e-9;
+
+		// -1 = negativní, +1 = pozitivní, 0 = neutrální (close přesně na 50 % range).
+		public static int Side(double high, double low, double close)
+		{
+			double d	= close * 2.0 - (high + low);
+			double tol	= RelEps * Math.Max(Math.Abs(high), Math.Abs(low));
+			return d < -tol ? -1 : d > tol ? 1 : 0;
+		}
+
+		public static bool IsNegative(double high, double low, double close) { return Side(high, low, close) < 0; }
+		public static bool IsPositive(double high, double low, double close) { return Side(high, low, close) > 0; }
+
+		// Volat jednou za každou UZAVŘENOU svíčku, ve vzestupném pořadí indexů.
+		public void AddBar(int bar, double high, double low, double close)
+		{
+			lock (Sync)
+			{
+				if (bar <= LastBar)
+					return;
+				LastBar = bar;
+				int firstNew = zones.Count;
+
+				// (1) Čekající kandidáti – potvrzení svíčkou celou za hranou (long: Low > High[m2], short: High < Low[m2]),
+				//     nemusí být bezprostředně následující. Jedna svíčka může potvrdit víc kandidátů.
+				//     AllPending: zrušení, když svíčka zavře za opačnou hranou dřív, než přišlo potvrzení.
+				ProcessPending(longPending, true, bar, high, low, close);
+				ProcessPending(shortPending, false, bar, high, low, close);
+
+				// (2) Stav potvrzených zón – test hrany a prolomení (close za opačnou hranou).
+				//     Zóny potvrzené touto svíčkou se přeskočí (potvrzovací svíčka není test).
+				for (int i = 0; i < firstNew; i++)
+				{
+					M2Zone z = zones[i];
+					if (z.State == M2ZoneState.Broken)
+						continue;
+
+					bool touched	= z.IsLong ? low <= z.High : high >= z.Low;
+					bool broken		= z.IsLong ? close < z.Low : close > z.High;
+
+					if (touched && z.TestBar < 0)
+					{
+						z.TestBar = bar;
+						AddEvent(M2EventKind.Tested, z.IsLong, z.M2Bar, bar, z.High, z.Low);
+					}
+
+					if (broken)
+					{
+						z.State		= M2ZoneState.Broken;
+						z.BrokenBar	= bar;
+						AddEvent(M2EventKind.Broken, z.IsLong, z.M2Bar, bar, z.High, z.Low);
+					}
+					else if (touched && z.State == M2ZoneState.Untested)
+						z.State = M2ZoneState.Tested;
+				}
+
+				// (3) Svíčka sama jako nový kandidát – až po kroku (1), takže nikdy nepotvrdí sama sebe.
+				//     AllPending: přidá se k čekajícím. OnlyLast: nahradí předchozího kandidáta ve svém směru.
+				int side = Side(high, low, close);
+				if (side != 0)
+				{
+					bool isLong = side < 0;
+					List<Candidate> list = isLong ? longPending : shortPending;
+					if (Mode == M2ZonesCandidateMode.OnlyLast)
+						list.Clear();
+					list.Add(new Candidate { Bar = bar, High = high, Low = low });
+					AddEvent(M2EventKind.Candidate, isLong, bar, bar, high, low);
+				}
+
+				// (4) Prolomené zóny starší než MaxHistoryBars ven.
+				if (MaxHistoryBars > 0)
+					zones.RemoveAll(z => z.State == M2ZoneState.Broken && bar - z.BrokenBar > MaxHistoryBars);
+			}
+		}
+
+		// Průchod vpřed s kompakcí na místě: pořadí zůstává (zóny vznikají ve vzestupném pořadí M2Bar), seznam neroste.
+		private void ProcessPending(List<Candidate> list, bool isLong, int bar, double high, double low, double close)
+		{
+			bool allPending = Mode == M2ZonesCandidateMode.AllPending;
+			int keep = 0;
+			for (int i = 0; i < list.Count; i++)
+			{
+				Candidate c = list[i];
+
+				if (isLong ? low > c.High : high < c.Low)
+				{
+					zones.Add(NewZone(isLong, c, bar));
+					AddEvent(M2EventKind.Confirmed, isLong, c.Bar, bar, c.High, c.Low);
+					continue;
+				}
+
+				if (allPending)
+				{
+					if (isLong ? close < c.Low : close > c.High)
+					{
+						AddEvent(M2EventKind.Cancelled, isLong, c.Bar, bar, c.High, c.Low);
+						continue;
+					}
+					if (MaxPendingBars > 0 && bar - c.Bar >= MaxPendingBars)
+					{
+						AddEvent(M2EventKind.Expired, isLong, c.Bar, bar, c.High, c.Low);
+						continue;
+					}
+				}
+
+				list[keep++] = c;
+			}
+			if (keep < list.Count)
+				list.RemoveRange(keep, list.Count - keep);
+		}
+
+		private void AddEvent(M2EventKind kind, bool isLong, int m2Bar, int eventBar, double high, double low)
+		{
+			if (CollectEvents)
+				events.Add(new M2Event { Kind = kind, IsLong = isLong, M2Bar = m2Bar, EventBar = eventBar, High = high, Low = low });
+		}
+
+		// Přesune nasbírané události do target (volat mimo kreslení; vypisovat až po návratu, mimo zámek).
+		public void TakeEvents(List<M2Event> target)
+		{
+			lock (Sync)
+			{
+				target.AddRange(events);
+				events.Clear();
+			}
+		}
+
+		private static M2Zone NewZone(bool isLong, Candidate c, int confBar)
+		{
+			return new M2Zone { IsLong = isLong, M2Bar = c.Bar, ConfBar = confBar, High = c.High, Low = c.Low };
+		}
+	}
+}
+// ==== M2 ENGINE END ====
 
 #region NinjaScript generated code. Neither change nor remove.
 
