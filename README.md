@@ -1,17 +1,16 @@
-# M2Zones – postup pro Adama
+# M2Zones
 
 Vlastní M2 indikátor pro NinjaTrader 8 podle `ZADANI_M2_INDIKATOR.md` (vault Trading coach).
 
 ## 1. Instalace
-1. `M2Zones.cs` už je zkopírovaný v `Documents\NinjaTrader 8\bin\Custom\Indicators\Braunn\`
-   (master kopie je tady, v `F:\Trading\DEV\M2 Indicator\`, repozitář
+1. `M2Zones.cs` zkopírovat do `Documents\NinjaTrader 8\bin\Custom\Indicators\Braunn\`
+  repozitář
    [github.com/Braunn318/M2_Indicator_NT8](https://github.com/Braunn318/M2_Indicator_NT8)).
 2. NT8 → **New → NinjaScript Editor** → otevřít `Indicators\M2Zones` → **F5** (kompilace).
    Dole nesmí být žádná chyba. (Ověřeno: soubor jde zkompilovat proti DLL z tvé instalace NT8.)
 
 ## 2. Přidání na graf
 - Graf → **Indicators…** (Ctrl+I) → `M2Zones` → Add → OK.
-- `CandleBreakoutPremiumV2` z grafu sundej, ať se zóny nepřekrývají.
 
 ## 3. Parametry
 | Skupina | Parametr | Default | Co dělá |
