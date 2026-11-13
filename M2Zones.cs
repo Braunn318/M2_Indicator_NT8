@@ -6,6 +6,10 @@
 // - Vzhled určuje jen stav (netestovaná / testovaná / prolomená), nikdy stáří zóny.
 // - Calculate.OnBarClose, bez repaintu. Čekající kandidáti se nekreslí.
 //
+// 1.2.0 (2026-11-13): CandidateMode = HH_LL_OB_GAP (varianta HH/LL/OB/GAP, docs/UPRESNENI_M2.md) – z čekajících
+//                     kandidátů vyhrává 123Gap (svíčka 3 celá za svíčkou 1) > outside svíčka (na její potvrzení se čeká)
+//                     > short vyšší Low / long nižší High. Po potvrzení se ostatní čekající ve směru zahodí. Výchozí
+//                     režim zůstává AllPending.
 // 1.1.1 (2026-11-13): NewestConfirmedOnly (default) – když svíčka potvrdí víc kandidátů, kreslí se jen nejnovější
 //                     a starší čekající ve stejném směru se zahodí (žádné dva boxy v sobě). Hrana neprolomené M2
 //                     vede až do aktuální (tvořící se) svíčky, je vidět hned po potvrzení.
@@ -82,7 +86,7 @@ namespace NinjaTrader.NinjaScript.Indicators.Braunn
 		// Jen pro datové vlákno (DebugLog).
 		private readonly List<M2Event> pendingEvents = new List<M2Event>();
 
-		private const string M2ZonesVersion = "1.1.1";
+		private const string M2ZonesVersion = "1.2.0";
 
 		// V okně Indicators (klony ve SetDefaults / Configure) je vidět název.
 		// V běžícím grafu se text vlevo nahoře nevypisuje, pokud není zapnuté ShowChartLabel.
@@ -438,7 +442,7 @@ namespace NinjaTrader.NinjaScript.Indicators.Braunn
 
 		// Nové v 1.1. Bez [NinjaScriptProperty] – generovaný M2Zones(showLong, showShort, showBroken, maxHistoryBars)
 		// zůstává stejný (volá ho M2 Trend AOS).
-		[Display(Name = "CandidateMode", Description = "AllPending = každá negativní / pozitivní svíčka čeká na potvrzení, dokud se nepotvrdí nebo nezruší (close za opačnou hranou). OnlyLast = chování 1.0.x (jen nejnovější kandidát v každém směru), jen pro porovnání.", Order = 6, GroupName = "Logika")]
+		[Display(Name = "CandidateMode", Description = "AllPending = každá negativní / pozitivní svíčka čeká na potvrzení, dokud se nepotvrdí nebo nezruší (close za opačnou hranou). OnlyLast = chování 1.0.x (jen nejnovější kandidát v každém směru), jen pro porovnání. HH_LL_OB_GAP = varianta HH/LL/OB/GAP: vyhrává nejlepší kandidát – 123Gap > outside svíčka (čeká se na její potvrzení) > short vyšší Low / long nižší High; po potvrzení se ostatní čekající ve směru zahodí.", Order = 6, GroupName = "Logika")]
 		public M2ZonesCandidateMode CandidateMode { get; set; }
 
 		[Range(0, int.MaxValue)]
@@ -595,10 +599,13 @@ namespace NinjaTrader.NinjaScript.Indicators.Braunn
 // AllPending (1.1): každá negativní / pozitivní svíčka čeká, dokud se nepotvrdí nebo nezruší.
 // OnlyLast: chování 1.0.x – v každém směru jen nejnovější kandidát, novější ho přepíše. Jen pro porovnání.
 // Globální namespace jako M2ZonesPreviousMode (enum vlastnosti indikátoru).
+// HH_LL_OB_GAP (1.2, docs/UPRESNENI_M2.md): z čekajících kandidátů vyhrává nejlepší – 123Gap > outside svíčka >
+// short vyšší Low / long nižší High. Po potvrzení pattern končí, ostatní čekající ve směru se zahodí.
 public enum M2ZonesCandidateMode
 {
 	AllPending,
-	OnlyLast
+	OnlyLast,
+	HH_LL_OB_GAP
 }
 
 namespace NinjaTrader.NinjaScript.Indicators.M2ZonesCore
@@ -657,9 +664,16 @@ namespace NinjaTrader.NinjaScript.Indicators.M2ZonesCore
 			public int		Bar;
 			public double	High;
 			public double	Low;
+			// HH_LL_OB_GAP: outside vůči předchozí svíčce (high >= prev high, low <= prev low, aspoň jedno ostře).
+			public bool		IsOutside;
 		}
 
-		private readonly List<M2Zone>		zones			= new List<M2Zone>();
+		// High / low předchozí uzavřené svíčky (pro outside).
+		private bool	hasPrev;
+		private double	prevHigh;
+		private double	prevLow;
+
+		private readonly List<M2Zone>		zones		= new List<M2Zone>();
 		private readonly List<Candidate>	longPending		= new List<Candidate>();
 		private readonly List<Candidate>	shortPending	= new List<Candidate>();
 		private readonly List<M2Event>		events			= new List<M2Event>();
@@ -711,8 +725,16 @@ namespace NinjaTrader.NinjaScript.Indicators.M2ZonesCore
 				// (1) Čekající kandidáti – potvrzení svíčkou celou za hranou (long: Low > High[m2], short: High < Low[m2]),
 				//     nemusí být bezprostředně následující. Jedna svíčka může potvrdit víc kandidátů.
 				//     AllPending: zrušení, když svíčka zavře za opačnou hranou dřív, než přišlo potvrzení.
-				ProcessPending(longPending, true, bar, high, low, close);
-				ProcessPending(shortPending, false, bar, high, low, close);
+				if (Mode == M2ZonesCandidateMode.HH_LL_OB_GAP)
+				{
+					ProcessPendingBest(longPending, true, bar, high, low, close);
+					ProcessPendingBest(shortPending, false, bar, high, low, close);
+				}
+				else
+				{
+					ProcessPending(longPending, true, bar, high, low, close);
+					ProcessPending(shortPending, false, bar, high, low, close);
+				}
 
 				// (2) Stav potvrzených zón – test hrany a prolomení (close za opačnou hranou).
 				//     Zóny potvrzené touto svíčkou se přeskočí (potvrzovací svíčka není test).
@@ -750,9 +772,14 @@ namespace NinjaTrader.NinjaScript.Indicators.M2ZonesCore
 					List<Candidate> list = isLong ? longPending : shortPending;
 					if (Mode == M2ZonesCandidateMode.OnlyLast)
 						list.Clear();
-					list.Add(new Candidate { Bar = bar, High = high, Low = low });
+					bool outside = hasPrev && high >= prevHigh && low <= prevLow && (high > prevHigh || low < prevLow);
+					list.Add(new Candidate { Bar = bar, High = high, Low = low, IsOutside = outside });
 					AddEvent(M2EventKind.Candidate, isLong, bar, bar, high, low);
 				}
+
+				hasPrev		= true;
+				prevHigh	= high;
+				prevLow		= low;
 
 				// (4) Prolomené zóny starší než MaxHistoryBars ven.
 				if (MaxHistoryBars > 0)
@@ -810,6 +837,73 @@ namespace NinjaTrader.NinjaScript.Indicators.M2ZonesCore
 					}
 				}
 
+				list[keep++] = c;
+			}
+			if (keep < list.Count)
+				list.RemoveRange(keep, list.Count - keep);
+		}
+
+		// 1.2 HH_LL_OB_GAP (docs/UPRESNENI_M2.md). Pattern = M2 … potvrzovací svíčka, uvnitř žádná další M2.
+		// Vítěz z kandidátů potvrzených touto svíčkou, podle priority:
+		//   1) 123Gap – kandidát o 2 svíčky zpět (svíčka 3 celá za svíčkou 1), bez ohledu na cokoli dalšího;
+		//   2) čeká-li outside kandidát, smí se potvrdit jen outside (ostatní potvrzení se ignorují, čekají dál);
+		//   3) nejlepší hrana: short nejvyšší Low, long nejnižší High (shoda → novější).
+		// Po vítězi se všichni ostatní čekající ve směru zahodí a M2 se hledá znovu. Jinak zrušení / expirace jako AllPending.
+		private void ProcessPendingBest(List<Candidate> list, bool isLong, int bar, double high, double low, double close)
+		{
+			if (list.Count == 0)
+				return;
+
+			bool anyOutside = false;
+			for (int i = 0; i < list.Count; i++)
+				if (list[i].IsOutside) { anyOutside = true; break; }
+
+			int winner = -1;
+			for (int i = 0; i < list.Count; i++)
+			{
+				Candidate c = list[i];
+				if (!(isLong ? low > c.High : high < c.Low))
+					continue;
+
+				if (c.Bar == bar - 2)
+				{
+					winner = i;
+					break;
+				}
+
+				if (anyOutside && !c.IsOutside)
+					continue;
+
+				if (winner < 0 || (isLong ? c.High <= list[winner].High : c.Low >= list[winner].Low))
+					winner = i;
+			}
+
+			if (winner >= 0)
+			{
+				Candidate w = list[winner];
+				zones.Add(NewZone(isLong, w, bar));
+				AddEvent(M2EventKind.Confirmed, isLong, w.Bar, bar, w.High, w.Low);
+				for (int i = 0; i < list.Count; i++)
+					if (i != winner)
+						AddEvent(M2EventKind.Superseded, isLong, list[i].Bar, bar, list[i].High, list[i].Low);
+				list.Clear();
+				return;
+			}
+
+			int keep = 0;
+			for (int i = 0; i < list.Count; i++)
+			{
+				Candidate c = list[i];
+				if (isLong ? close < c.Low : close > c.High)
+				{
+					AddEvent(M2EventKind.Cancelled, isLong, c.Bar, bar, c.High, c.Low);
+					continue;
+				}
+				if (MaxPendingBars > 0 && bar - c.Bar >= MaxPendingBars)
+				{
+					AddEvent(M2EventKind.Expired, isLong, c.Bar, bar, c.High, c.Low);
+					continue;
+				}
 				list[keep++] = c;
 			}
 			if (keep < list.Count)

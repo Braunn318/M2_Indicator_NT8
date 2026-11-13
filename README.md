@@ -19,7 +19,7 @@ Vlastní M2 indikátor pro NinjaTrader 8 podle `ZADANI_M2_INDIKATOR.md` (vault T
 | Logika | ShowLong / ShowShort | ano / ano | kreslit long / short M2 |
 | Logika | ShowBroken | ano | prolomené M2 šedě (backtest); vypnuto = čistší live graf |
 | Logika | MaxHistoryBars | 2000 | jak daleko dozadu držet prolomené zóny (0 = bez limitu) |
-| Logika | CandidateMode | AllPending | **1.1**: AllPending = každá negativní / pozitivní svíčka čeká, dokud se nepotvrdí nebo nezruší; OnlyLast = chování 1.0.x (jen pro porovnání) |
+| Logika | CandidateMode | AllPending | **1.1**: AllPending = každá negativní / pozitivní svíčka čeká, dokud se nepotvrdí nebo nezruší; OnlyLast = chování 1.0.x (jen pro porovnání); **1.2**: HH_LL_OB_GAP = varianta HH/LL/OB/GAP (viz níže) |
 | Logika | MaxPendingBars | 0 | **1.1**: kandidát starší než N svíček se zahodí (jen výkon); 0 = bez limitu |
 | Logika | NewestConfirmedOnly | ano | **1.1.1**: když jedna svíčka potvrdí víc kandidátů, kreslí se jen nejnovější; starší čekající ve stejném směru se zahodí (žádné dva boxy v sobě). Vypnuto = chování 1.1.0 |
 | Ladění | DebugLog | ne | **1.1**: výpis každé události do NinjaScript Output (viz kap. 4) |
@@ -48,6 +48,11 @@ Vlastní M2 indikátor pro NinjaTrader 8 podle `ZADANI_M2_INDIKATOR.md` (vault T
 - **Jen nejnovější potvrzená (1.1.1, NewestConfirmedOnly)**: když jedna svíčka potvrdí víc čekajících kandidátů,
   M2 je jen ten nejnovější a všichni starší čekající ve stejném směru se zahodí (DebugLog: `NAHRAZENO …`).
   Potvrzená M2 se kreslí i tehdy, když po ní vznikl nový, zatím nepotvrzený kandidát (ten čeká dál).
+- **Varianta HH/LL/OB/GAP (1.2, CandidateMode = HH_LL_OB_GAP, `docs/UPRESNENI_M2.md`)**: pattern = M2 … potvrzovací
+  svíčka, uvnitř žádná další M2. Ze všech čekajících kandidátů ve směru vyhrává nejlepší: **123Gap** (svíčka 3 celá
+  za svíčkou 1 – svíčka 1 je M2 bez ohledu na cokoli) > **outside** svíčka (high ≥ a low ≤ předchozí svíčky, aspoň
+  jedno ostře; dokud čeká, potvrzení ostatních se ignoruje) > short **vyšší low** / long **nižší high**. Po potvrzení
+  se ostatní čekající ve stejném směru zahodí (DebugLog `NAHRAZENO …`) a M2 se hledá znovu. Long a short nezávisle.
 - **Box** = range M2 svíčky od M2 po potvrzovací svíčku. **Hrana** = čára od potvrzení doprava až do aktuální
   (tvořící se) svíčky – je vidět hned po potvrzení (1.1.1; dřív končila na poslední uzavřené svíčce).
 - **Netestovaná**: sytá barva, plná hrana. **Testovaná** (první dotek hrany po potvrzení): stejná barva, nízké krytí, přerušovaná.
@@ -74,6 +79,8 @@ Vlastní M2 indikátor pro NinjaTrader 8 podle `ZADANI_M2_INDIKATOR.md` (vault T
 - [ ] **1.1** CandidateMode = OnlyLast: M2 16:51 zmizí (staré chování).
 - [ ] **1.1.1** ES 12-26, 1 min, 13. 11. 2026: svíčka 16:30 potvrdí jen M2 16:26 (jeden box), 16:22 se nekreslí.
 - [ ] **1.1.1** Hrana nové M2 je vidět hned na tvořící se svíčce po potvrzení a vede až k ní.
+- [ ] **1.2** CandidateMode = HH_LL_OB_GAP: v DebugLog u každé M2 zkontrolovat, že vyhrál gap / outside / nejlepší
+      low (high) a ostatní jsou `NAHRAZENO`; mezi M2 a potvrzovací svíčkou žádná další M2 ve stejném směru.
 - [ ] **1.1** Porovnání s CW Challenger (M2), 12. 11. 2026 14:00–16:45: každý rozdíl jde vysvětlit pravidly (DebugLog).
 
 ## 6. Když replay / OF graf nic neukazuje (není to M2Zones)
@@ -87,6 +94,8 @@ Prověřeno 1. 11. 2026:
 - Chyba v Logu `Indicator 'Footprints' … only 4 bars` patří vendor indikátoru Footprints (málo barů), ne M2Zones.
 
 ## Historie
+- **1.2.0 (2026-11-13)** – nová varianta CandidateMode = HH_LL_OB_GAP (HH/LL/OB/GAP): vyhrává 123Gap > outside
+  svíčka > vyšší low (short) / nižší high (long); po potvrzení se ostatní čekající zahodí. Default zůstává AllPending.
 - **1.1.1 (2026-11-13)** – když jedna svíčka potvrdí víc kandidátů, kreslí se jen nejnovější M2 (NewestConfirmedOnly,
   default; žádné dva boxy v sobě). Hrana vede až do aktuální svíčky a je vidět hned po potvrzení.
 - **1.1.0 (2026-11-12)** – opraveno: M2 potvrzená až po vzniku novější negativní (pozitivní) svíčky se nevykreslila

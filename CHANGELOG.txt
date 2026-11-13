@@ -1,3 +1,9 @@
+## 1.2.0 - 2026-11-13
+- Nová varianta CandidateMode = HH_LL_OB_GAP ("HH/LL/OB/GAP", docs/UPRESNENI_M2.md). Pattern = M2 … potvrzovací svíčka, uvnitř žádná další M2 ve stejném směru
+- Z čekajících kandidátů vyhrává nejlepší: 123Gap (svíčka 3 celá za svíčkou 1 → svíčka 1 je M2 bez ohledu na cokoli) > outside svíčka (high >= a low <= předchozí svíčky, aspoň jedno ostře; dokud čeká, potvrzení ostatních kandidátů se ignoruje) > short vyšší low / long nižší high (shoda → novější)
+- Po potvrzení se všichni ostatní čekající ve stejném směru zahodí (DebugLog: NAHRAZENO) a M2 se hledá znovu; long a short patterny jsou nezávislé. Zrušení (close za opačnou hranou) a MaxPendingBars platí jako u AllPending, NewestConfirmedOnly se v této variantě nepoužije
+- Výchozí režim zůstává AllPending – M2 Trend AOS obchoduje beze změny
+
 ## 1.1.1 - 2026-11-13
 - Opraveno: jedna svíčka potvrdila víc čekajících kandidátů a v grafu byly dva boxy v sobě (ES 13. 11. 2026: svíčka 16:30 potvrdila M2 16:22 i 16:26). Nově platí jen nejnovější potvrzená (16:26); starší čekající ve stejném směru se zahodí
 - Potvrzená M2 se dál kreslí, i když po ní vznikl nový, zatím nepotvrzený kandidát (případ 12. 11. 16:51 beze změny)
