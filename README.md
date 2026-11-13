@@ -57,6 +57,8 @@ Vlastní M2 indikátor pro NinjaTrader 8 podle `ZADANI_M2_INDIKATOR.md` (vault T
   (tvořící se) svíčky – je vidět hned po potvrzení (1.1.1; dřív končila na poslední uzavřené svíčce).
 - **Netestovaná**: sytá barva, plná hrana. **Testovaná** (první dotek hrany po potvrzení): stejná barva, nízké krytí, přerušovaná.
   **Prolomená** (close za opačnou hranou, ne knot): šedá, hrana končí na svíčce prolomení, zůstává v grafu.
+- **Nápis M2_L / M2_S (1.2.0, ShowM2Labels)**: prolomená M2 má v pravém horním rohu boxu malý šedý nápis se směrem,
+  netestovaná ho má nad pravým koncem hrany (barvou hrany). Testovaná bez nápisu.
 - Vzhled určuje **jen stav**. Starší M2 (napravo už je novější ve stejném směru) se kreslí úplně stejně
   jako nejnovější – netestovaná zůstane netestovaná.
 - Hrana a obrys testované / prolomené mají krytí 3× krytí boxu (min. 25 %); netestovaná má hranu vždy 100 %.
@@ -96,6 +98,7 @@ Prověřeno 1. 11. 2026:
 ## Historie
 - **1.2.0 (2026-11-13)** – nová varianta CandidateMode = HH_LL_OB_GAP (HH/LL/OB/GAP): vyhrává 123Gap > outside
   svíčka > vyšší low (short) / nižší high (long); po potvrzení se ostatní čekající zahodí. Default zůstává AllPending.
+  Nápis M2_L / M2_S (ShowM2Labels): prolomená v pravém horním rohu boxu, netestovaná nad pravým koncem hrany.
 - **1.1.1 (2026-11-13)** – když jedna svíčka potvrdí víc kandidátů, kreslí se jen nejnovější M2 (NewestConfirmedOnly,
   default; žádné dva boxy v sobě). Hrana vede až do aktuální svíčky a je vidět hned po potvrzení.
 - **1.1.0 (2026-11-12)** – opraveno: M2 potvrzená až po vzniku novější negativní (pozitivní) svíčky se nevykreslila

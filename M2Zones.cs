@@ -9,7 +9,8 @@
 // 1.2.0 (2026-11-13): CandidateMode = HH_LL_OB_GAP (varianta HH/LL/OB/GAP, docs/UPRESNENI_M2.md) – z čekajících
 //                     kandidátů vyhrává 123Gap (svíčka 3 celá za svíčkou 1) > outside svíčka (na její potvrzení se čeká)
 //                     > short vyšší Low / long nižší High. Po potvrzení se ostatní čekající ve směru zahodí. Výchozí
-//                     režim zůstává AllPending.
+//                     režim zůstává AllPending. Nápis M2_L / M2_S (ShowM2Labels): prolomená v pravém horním rohu
+//                     boxu, netestovaná nad pravým koncem hrany.
 // 1.1.1 (2026-11-13): NewestConfirmedOnly (default) – když svíčka potvrdí víc kandidátů, kreslí se jen nejnovější
 //                     a starší čekající ve stejném směru se zahodí (žádné dva boxy v sobě). Hrana neprolomené M2
 //                     vede až do aktuální (tvořící se) svíčky, je vidět hned po potvrzení.
@@ -65,6 +66,9 @@ namespace NinjaTrader.NinjaScript.Indicators.Braunn
 		private SharpDX.Direct2D1.Brush[,]		edgeDx	= new SharpDX.Direct2D1.Brush[2, 3];
 		private SharpDX.Direct2D1.Brush			markerDx;
 		private SharpDX.Direct2D1.StrokeStyle	dashStyle;
+		// Nápis M2_L / M2_S (1.2.0): prolomená v rohu boxu (plná šedá – hrana prolomené je moc slabá), netestovaná na hraně.
+		private SharpDX.DirectWrite.TextFormat	labelFormat;
+		private SharpDX.Direct2D1.Brush			brokenTextDx;
 
 		// Data jedné zóny pro vykreslení – kopie pořízená pod zámkem, kreslí se až mimo něj.
 		private struct ZoneView
@@ -132,6 +136,7 @@ namespace NinjaTrader.NinjaScript.Indicators.Braunn
 				EdgeWidth					= 1;
 				ShowTestMarker				= true;
 				ShowChartLabel				= false;
+				ShowM2Labels				= true;
 
 				EnableCandleColoring		= false;
 				ColorAbove50				= Brushes.LimeGreen;
@@ -241,6 +246,8 @@ namespace NinjaTrader.NinjaScript.Indicators.Braunn
 				}
 
 			markerDx = (TestMarkerColor ?? Brushes.Black).ToDxBrush(RenderTarget, 1f);
+			brokenTextDx = (BrokenColor ?? Brushes.Gray).ToDxBrush(RenderTarget, 1f);
+			labelFormat = new NinjaTrader.Gui.Tools.SimpleFont("Arial", 8).ToDirectWriteTextFormat();
 
 			dashStyle = new SharpDX.Direct2D1.StrokeStyle(RenderTarget.Factory,
 				new SharpDX.Direct2D1.StrokeStyleProperties { DashStyle = SharpDX.Direct2D1.DashStyle.Dash });
@@ -256,6 +263,8 @@ namespace NinjaTrader.NinjaScript.Indicators.Braunn
 				}
 
 			if (markerDx != null) { markerDx.Dispose(); markerDx = null; }
+			if (brokenTextDx != null) { brokenTextDx.Dispose(); brokenTextDx = null; }
+			if (labelFormat != null) { labelFormat.Dispose(); labelFormat = null; }
 			if (dashStyle != null) { dashStyle.Dispose(); dashStyle = null; }
 		}
 
@@ -407,6 +416,22 @@ namespace NinjaTrader.NinjaScript.Indicators.Braunn
 						float r = Math.Max(2.5f, edgeWidth + 1.5f);
 						float xTest = chartControl.GetXByBarIndex(ChartBars, z.TestBar);
 						RenderTarget.FillEllipse(new SharpDX.Direct2D1.Ellipse(new SharpDX.Vector2(xTest, yEdge), r, r), markerDx);
+					}
+
+					// Nápis M2_L / M2_S: prolomená v pravém horním rohu boxu, netestovaná nad pravým koncem hrany.
+					if (ShowM2Labels && labelFormat != null && style != StyleTested)
+					{
+						bool brokenZone = style == StyleBroken;
+						using (SharpDX.DirectWrite.TextLayout layout = new SharpDX.DirectWrite.TextLayout(
+							NinjaTrader.Core.Globals.DirectWriteFactory, z.IsLong ? "M2_L" : "M2_S", labelFormat, 200f, labelFormat.FontSize))
+						{
+							float w = layout.Metrics.Width;
+							float th = layout.Metrics.Height;
+							SharpDX.Vector2 pt = brokenZone
+								? new SharpDX.Vector2(xConf - w - 2f, yHigh + 1f)
+								: new SharpDX.Vector2(xEnd - w - 2f, yEdge - th - 1f);
+							RenderTarget.DrawTextLayout(pt, layout, brokenZone ? brokenTextDx : edge);
+						}
 					}
 				}
 			}
@@ -560,6 +585,10 @@ namespace NinjaTrader.NinjaScript.Indicators.Braunn
 
 		[Display(Name = "ShowChartLabel", Description = "Vypisovat název indikátoru vlevo nahoře v grafu.", Order = 21, GroupName = "Vzhled")]
 		public bool ShowChartLabel { get; set; }
+
+		// 1.2.0. Bez [NinjaScriptProperty] – generovaný kód beze změny.
+		[Display(Name = "ShowM2Labels", Description = "Nápis M2_L / M2_S: u prolomené M2 v pravém horním rohu boxu, u netestované nad pravým koncem hrany.", Order = 22, GroupName = "Vzhled")]
+		public bool ShowM2Labels { get; set; }
 
 		// --- Svíčky ---
 		[Display(Name = "EnableCandleColoring", Description = "Obarvit svíčky podle close nad / pod 50 % range.", Order = 20, GroupName = "Svíčky")]
