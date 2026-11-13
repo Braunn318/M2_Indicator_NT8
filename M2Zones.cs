@@ -6,6 +6,9 @@
 // - Vzhled určuje jen stav (netestovaná / testovaná / prolomená), nikdy stáří zóny.
 // - Calculate.OnBarClose, bez repaintu. Čekající kandidáti se nekreslí.
 //
+// 1.1.1 (2026-11-13): NewestConfirmedOnly (default) – když svíčka potvrdí víc kandidátů, kreslí se jen nejnovější
+//                     a starší čekající ve stejném směru se zahodí (žádné dva boxy v sobě). Hrana neprolomené M2
+//                     vede až do aktuální (tvořící se) svíčky, je vidět hned po potvrzení.
 // 1.1.0 (2026-11-12): režim „všichni čekající" (CandidateMode = AllPending, default) – každá negativní / pozitivní
 //                     svíčka čeká, dokud se nepotvrdí nebo nezruší (close za opačnou hranou); novější ji nepřepíše.
 //                     Pořadí na svíčce: potvrzení / zrušení → stav zón → nový kandidát. OnlyLast = chování 1.0.x.
@@ -79,7 +82,7 @@ namespace NinjaTrader.NinjaScript.Indicators.Braunn
 		// Jen pro datové vlákno (DebugLog).
 		private readonly List<M2Event> pendingEvents = new List<M2Event>();
 
-		private const string M2ZonesVersion = "1.1.0";
+		private const string M2ZonesVersion = "1.1.1";
 
 		// V okně Indicators (klony ve SetDefaults / Configure) je vidět název.
 		// V běžícím grafu se text vlevo nahoře nevypisuje, pokud není zapnuté ShowChartLabel.
@@ -110,6 +113,7 @@ namespace NinjaTrader.NinjaScript.Indicators.Braunn
 				MaxHistoryBars				= 2000;
 				CandidateMode				= M2ZonesCandidateMode.AllPending;
 				MaxPendingBars				= 0;
+				NewestConfirmedOnly			= true;
 				DebugLog					= false;
 
 				LongUntestedColor			= Brushes.LimeGreen;
@@ -148,10 +152,11 @@ namespace NinjaTrader.NinjaScript.Indicators.Braunn
 				engine.MaxHistoryBars	= MaxHistoryBars;
 				engine.Mode				= CandidateMode;
 				engine.MaxPendingBars	= MaxPendingBars;
+				engine.NewestConfirmedOnly	= NewestConfirmedOnly;
 				engine.CollectEvents	= DebugLog;
 				if (DebugLog)
-					Print(string.Format("M2Zones {0} | {1} | CandidateMode {2}, MaxPendingBars {3} | čas M2 | směr | událost | high | low",
-						M2ZonesVersion, Instrument != null ? Instrument.FullName : "", CandidateMode, MaxPendingBars));
+					Print(string.Format("M2Zones {0} | {1} | CandidateMode {2}, MaxPendingBars {3}, NewestConfirmedOnly {4} | čas M2 | směr | událost | high | low",
+						M2ZonesVersion, Instrument != null ? Instrument.FullName : "", CandidateMode, MaxPendingBars, NewestConfirmedOnly));
 			}
 			else if (State == State.Terminated)
 			{
@@ -196,6 +201,7 @@ namespace NinjaTrader.NinjaScript.Indicators.Braunn
 					case M2EventKind.Cancelled:	what = "ZRUŠENO svíčkou " + BarTime(e.EventBar); break;
 					case M2EventKind.Expired:	what = "ZAHOZENO (MaxPendingBars) " + BarTime(e.EventBar); break;
 					case M2EventKind.Tested:	what = "TEST " + BarTime(e.EventBar); break;
+					case M2EventKind.Superseded:	what = "NAHRAZENO novější M2 potvrzenou svíčkou " + BarTime(e.EventBar); break;
 					default:					what = "PROLOMENO " + BarTime(e.EventBar); break;
 				}
 				Print(string.Format("{0} | {1} | {2} | {3} | {4}",
@@ -296,11 +302,15 @@ namespace NinjaTrader.NinjaScript.Indicators.Braunn
 			float halfBar	= Math.Max(1f, chartControl.GetBarPaintWidth(ChartBars) / 2f);
 			float edgeWidth	= Math.Max(1, EdgeWidth);
 
+			// Neprolomená hrana vede až do aktuální (tvořící se) svíčky – s OnBarClose je to poslední index v ChartBars,
+			// o jednu dál než poslední uzavřená. Mění se jen délka čáry, ne stav zóny (žádný repaint).
+			int currentBar = ChartBars.Count - 1;
+
 			// 1) Pod zámkem jen kopie dat – žádné volání NT API, aby datové vlákno (OnBarUpdate) nečekalo na kreslení.
 			views.Clear();
 			lock (engine.Sync)
 			{
-				int		lastBar		= engine.LastBar;
+				int		lastBar		= Math.Max(engine.LastBar, currentBar);
 				List<M2Zone> zones	= engine.Zones;
 
 				for (int i = 0; i < zones.Count; i++)
@@ -434,6 +444,10 @@ namespace NinjaTrader.NinjaScript.Indicators.Braunn
 		[Range(0, int.MaxValue)]
 		[Display(Name = "MaxPendingBars", Description = "AllPending: kandidát starší než N svíček se zahodí (jen kvůli výkonu). 0 = bez limitu.", Order = 7, GroupName = "Logika")]
 		public int MaxPendingBars { get; set; }
+
+		// Nové v 1.1.1. Samostatná vlastnost (ne hodnota CandidateMode), aby se default propsal i do uložených šablon.
+		[Display(Name = "NewestConfirmedOnly", Description = "Když jedna svíčka potvrdí víc kandidátů, kreslí se jen nejnovější a starší čekající ve stejném směru se zahodí (žádné dva boxy v sobě). Vypnuto = chování 1.1.0.", Order = 8, GroupName = "Logika")]
+		public bool NewestConfirmedOnly { get; set; }
 
 		// --- Ladění ---
 		[Display(Name = "DebugLog", Description = "Vypisovat do NinjaScript Output každou událost: kandidát, potvrzení (kým), zrušení, test, prolomení.", Order = 1, GroupName = "Ladění")]
@@ -621,7 +635,8 @@ namespace NinjaTrader.NinjaScript.Indicators.M2ZonesCore
 		Cancelled,
 		Expired,
 		Tested,
-		Broken
+		Broken,
+		Superseded
 	}
 
 	// Událost pro ladicí výpis (DebugLog). M2Bar = svíčka M2 / kandidáta, EventBar = svíčka, která událost způsobila.
@@ -656,6 +671,9 @@ namespace NinjaTrader.NinjaScript.Indicators.M2ZonesCore
 		public M2ZonesCandidateMode	Mode			= M2ZonesCandidateMode.AllPending;
 		// AllPending: kandidát starší než N svíček se zahodí (jen kvůli výkonu). 0 = bez limitu.
 		public int				MaxPendingBars	= 0;
+		// 1.1.1: svíčka, která potvrdí víc kandidátů, vytvoří jen M2 z nejnovějšího; starší čekající ve stejném
+		// směru se zahodí. false = chování 1.1.0 (každý potvrzený kandidát = vlastní M2).
+		public bool				NewestConfirmedOnly	= true;
 		// true = sbírat události pro ladicí výpis (TakeEvents). false = žádná režie.
 		public bool				CollectEvents;
 
@@ -746,11 +764,31 @@ namespace NinjaTrader.NinjaScript.Indicators.M2ZonesCore
 		private void ProcessPending(List<Candidate> list, bool isLong, int bar, double high, double low, double close)
 		{
 			bool allPending = Mode == M2ZonesCandidateMode.AllPending;
+
+			// 1.1.1 NewestConfirmedOnly: když svíčka potvrdí víc kandidátů, platí jen nejnovější z nich.
+			// Všichni starší čekající ve stejném směru (potvrzení i nepotvrzení) se zahodí – žádné dva boxy v sobě.
+			// Novější kandidáti za ním čekají dál. Seznam je seřazený vzestupně podle Bar.
+			int newest = -1;
+			if (NewestConfirmedOnly)
+				for (int i = list.Count - 1; i >= 0; i--)
+					if (isLong ? low > list[i].High : high < list[i].Low)
+					{
+						newest = i;
+						break;
+					}
+
 			int keep = 0;
 			for (int i = 0; i < list.Count; i++)
 			{
 				Candidate c = list[i];
 
+				if (i < newest)
+				{
+					AddEvent(M2EventKind.Superseded, isLong, c.Bar, bar, c.High, c.Low);
+					continue;
+				}
+
+				// Za indexem newest už nic potvrzené není (newest je poslední potvrzený), stačí stejná podmínka.
 				if (isLong ? low > c.High : high < c.Low)
 				{
 					zones.Add(NewZone(isLong, c, bar));

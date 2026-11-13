@@ -21,6 +21,7 @@ Vlastní M2 indikátor pro NinjaTrader 8 podle `ZADANI_M2_INDIKATOR.md` (vault T
 | Logika | MaxHistoryBars | 2000 | jak daleko dozadu držet prolomené zóny (0 = bez limitu) |
 | Logika | CandidateMode | AllPending | **1.1**: AllPending = každá negativní / pozitivní svíčka čeká, dokud se nepotvrdí nebo nezruší; OnlyLast = chování 1.0.x (jen pro porovnání) |
 | Logika | MaxPendingBars | 0 | **1.1**: kandidát starší než N svíček se zahodí (jen výkon); 0 = bez limitu |
+| Logika | NewestConfirmedOnly | ano | **1.1.1**: když jedna svíčka potvrdí víc kandidátů, kreslí se jen nejnovější; starší čekající ve stejném směru se zahodí (žádné dva boxy v sobě). Vypnuto = chování 1.1.0 |
 | Ladění | DebugLog | ne | **1.1**: výpis každé události do NinjaScript Output (viz kap. 4) |
 | Vzhled | Long – netestovaná / Long – testovaná | lime / lime | barva long M2 podle stavu; výchozí stejná, liší se krytím |
 | Vzhled | Short – netestovaná / Short – testovaná | červená / červená | barva short M2 podle stavu; výchozí stejná, liší se krytím |
@@ -44,7 +45,11 @@ Vlastní M2 indikátor pro NinjaTrader 8 podle `ZADANI_M2_INDIKATOR.md` (vault T
 - **DebugLog**: zapnout v nastavení indikátoru (Ladění → DebugLog), výpis je v **New → NinjaScript Output**.
   Řádek: `čas M2 | LONG/SHORT | KANDIDÁT / POTVRZENO svíčkou HH:mm:ss / ZRUŠENO svíčkou … / TEST … / PROLOMENO … | high | low`.
   Časy jsou časy svíček na ose grafu NT8. Na 10 dnech 1min dat je výpis dlouhý – zapínat jen na kontrolu.
-- **Box** = range M2 svíčky od M2 po potvrzovací svíčku. **Hrana** = čára od potvrzení doprava.
+- **Jen nejnovější potvrzená (1.1.1, NewestConfirmedOnly)**: když jedna svíčka potvrdí víc čekajících kandidátů,
+  M2 je jen ten nejnovější a všichni starší čekající ve stejném směru se zahodí (DebugLog: `NAHRAZENO …`).
+  Potvrzená M2 se kreslí i tehdy, když po ní vznikl nový, zatím nepotvrzený kandidát (ten čeká dál).
+- **Box** = range M2 svíčky od M2 po potvrzovací svíčku. **Hrana** = čára od potvrzení doprava až do aktuální
+  (tvořící se) svíčky – je vidět hned po potvrzení (1.1.1; dřív končila na poslední uzavřené svíčce).
 - **Netestovaná**: sytá barva, plná hrana. **Testovaná** (první dotek hrany po potvrzení): stejná barva, nízké krytí, přerušovaná.
   **Prolomená** (close za opačnou hranou, ne knot): šedá, hrana končí na svíčce prolomení, zůstává v grafu.
 - Vzhled určuje **jen stav**. Starší M2 (napravo už je novější ve stejném směru) se kreslí úplně stejně
@@ -67,6 +72,8 @@ Vlastní M2 indikátor pro NinjaTrader 8 podle `ZADANI_M2_INDIKATOR.md` (vault T
 - [ ] **1.1** ES 12-26, 1 min, 12. 11. 2026: long M2 16:51 se vykreslí (box 16:51 → 16:54, hrana ≈ 7628,50),
       i když 16:53 vznikla negativní svíčka. V DebugLog řádek `… 16:51:00 | LONG | POTVRZENO svíčkou 16:54:00 | …`.
 - [ ] **1.1** CandidateMode = OnlyLast: M2 16:51 zmizí (staré chování).
+- [ ] **1.1.1** ES 12-26, 1 min, 13. 11. 2026: svíčka 16:30 potvrdí jen M2 16:26 (jeden box), 16:22 se nekreslí.
+- [ ] **1.1.1** Hrana nové M2 je vidět hned na tvořící se svíčce po potvrzení a vede až k ní.
 - [ ] **1.1** Porovnání s CW Challenger (M2), 12. 11. 2026 14:00–16:45: každý rozdíl jde vysvětlit pravidly (DebugLog).
 
 ## 6. Když replay / OF graf nic neukazuje (není to M2Zones)
@@ -80,6 +87,8 @@ Prověřeno 1. 11. 2026:
 - Chyba v Logu `Indicator 'Footprints' … only 4 bars` patří vendor indikátoru Footprints (málo barů), ne M2Zones.
 
 ## Historie
+- **1.1.1 (2026-11-13)** – když jedna svíčka potvrdí víc kandidátů, kreslí se jen nejnovější M2 (NewestConfirmedOnly,
+  default; žádné dva boxy v sobě). Hrana vede až do aktuální svíčky a je vidět hned po potvrzení.
 - **1.1.0 (2026-11-12)** – opraveno: M2 potvrzená až po vzniku novější negativní (pozitivní) svíčky se nevykreslila
   (např. ES 12. 11. 16:51). Nový režim CandidateMode = AllPending (default): všichni kandidáti čekají, dokud se
   nepotvrdí nebo nezruší (close za opačnou hranou). OnlyLast = staré chování. Nové MaxPendingBars a DebugLog.

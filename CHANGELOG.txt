@@ -1,3 +1,10 @@
+## 1.1.1 - 2026-11-13
+- Opraveno: jedna svíčka potvrdila víc čekajících kandidátů a v grafu byly dva boxy v sobě (ES 13. 11. 2026: svíčka 16:30 potvrdila M2 16:22 i 16:26). Nově platí jen nejnovější potvrzená (16:26); starší čekající ve stejném směru se zahodí
+- Potvrzená M2 se dál kreslí, i když po ní vznikl nový, zatím nepotvrzený kandidát (případ 12. 11. 16:51 beze změny)
+- Nová vlastnost NewestConfirmedOnly (Logika, výchozí zapnuto; vypnuto = chování 1.1.0). Samostatná vlastnost, aby se výchozí hodnota propsala i do uložených šablon s CandidateMode = AllPending. DebugLog vypisuje zahozené kandidáty jako NAHRAZENO
+- Hrana neprolomené M2 vede až do aktuální (tvořící se) svíčky – je vidět hned po potvrzení, dřív o svíčku zaostávala
+- M2 Trend AOS bere engine z M2Zones: po překompilování obchoduje stejné zóny (engine má NewestConfirmedOnly zapnuté)
+
 ## 1.1.0 - 2026-11-12
 - Opraveno: M2Zones nevykreslila M2, které byly podle definice potvrzené. V každém směru se držel jen jeden čekající kandidát a každá novější negativní (u longu) svíčka ho přepsala – když potvrzení přišlo až po ní, starší M2 zmizela (např. ES 12. 11. 2026: long M2 16:51, potvrzená 16:54, mezitím negativní 16:53)
 - Nový režim CandidateMode = AllPending (výchozí, zadání 1.1 §2): každá negativní / pozitivní svíčka zůstává kandidátem, dokud se nepotvrdí (svíčka celá za hranou) nebo nezruší (svíčka zavře za opačnou hranou). Jedna svíčka může potvrdit víc kandidátů. Pořadí na svíčce: potvrzení / zrušení → test / prolomení zón → nový kandidát
